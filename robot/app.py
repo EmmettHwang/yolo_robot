@@ -15,6 +15,7 @@ YOLOv5 휴머노이드 로봇 — 탭 메인 윈도우 (진입점).
 
 import os
 import sys
+import json
 import threading
 import configparser
 import subprocess
@@ -26,7 +27,7 @@ import serial.tools.list_ports as list_ports
 from PIL import Image, ImageTk
 
 from paths import (BASE, ROBOT_DIR, CONFIG_INI, LOGO_PATH, ACTIVE_MODEL,
-                   ensure_dirs)
+                   DATA_DIR, ensure_dirs)
 from version import __version__
 from motion_table import COCO_CLASSES, coco_kr
 import trainer
@@ -35,6 +36,7 @@ from object_actions import ActionEditor
 from recognition_view import RecognitionView
 
 PY = sys.executable
+WIN_STATE = os.path.join(DATA_DIR, "window.json")   # 메인 윈도 위치/크기 기억
 BG = "#f4f6fa"
 HEADER_BG = "#1e2a4a"
 ACCENT = "#1565c0"
@@ -72,15 +74,20 @@ class App:
     def __init__(self):
         ensure_dirs()
         self.root = tk.Tk()
-        self.root.title(f"YOLOv5 휴머노이드 로봇  v{__version__}")
-        # 화면 세로를 꽉 채우도록(작업표시줄 고려해 약간 여유)
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
-        win_w = min(1180, sw)
-        win_h = sh - 64
-        x = max(0, (sw - win_w) // 2)
-        self.root.geometry(f"{win_w}x{win_h}+{x}+0")
+        self.root.title(f"YOLO 기반 휴머노이드  ROBO COMMANDER  v{__version__}")
         self.root.minsize(1080, 640)
+        saved = self._load_win_geom()
+        if saved:
+            # 지난번 종료 위치/크기 복원(트리플 모니터 등)
+            self.root.geometry(saved)
+        else:
+            # 첫 실행: 화면 세로를 꽉 채우도록(작업표시줄 고려해 약간 여유)
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            win_w = min(1180, sw)
+            win_h = sh - 64
+            x = max(0, (sw - win_w) // 2)
+            self.root.geometry(f"{win_w}x{win_h}+{x}+0")
         self.root.configure(bg=BG)
         self._style()
 
@@ -171,7 +178,7 @@ class App:
     def _header(self):
         header = tk.Frame(self.root, bg=HEADER_BG, height=66)
         header.pack(fill="x"); header.pack_propagate(False)
-        tk.Label(header, text="🤖  YOLOv5 휴머노이드 로봇 컨트롤",
+        tk.Label(header, text="🤖  YOLO 기반 휴머노이드  ROBO COMMANDER",
                  font=("Malgun Gothic", 17, "bold"), fg="white",
                  bg=HEADER_BG).pack(side="left", padx=20)
         try:
@@ -533,7 +540,23 @@ class App:
         import pdf_viewer
         pdf_viewer.open_manual(self.root)
 
+    def _load_win_geom(self):
+        try:
+            with open(WIN_STATE, encoding="utf-8") as f:
+                return json.load(f).get("geometry") or None
+        except Exception:
+            return None
+
+    def _save_win_geom(self):
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            with open(WIN_STATE, "w", encoding="utf-8") as f:
+                json.dump({"geometry": self.root.geometry()}, f)
+        except Exception:
+            pass
+
     def _on_close(self):
+        self._save_win_geom()        # 현재 위치/크기 기억
         self._hide_wait_dialog()
         try:
             self.rec_view.on_close()

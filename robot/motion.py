@@ -75,6 +75,14 @@ class MotionRunner:
         """위치 읽기 요청. 결과 dict를 callback(res)로 전달(러너 스레드에서 호출)."""
         self._enqueue(("readpos", (list(ids), callback)))
 
+    def zerocomp(self, items) -> None:
+        """영점(오프셋) 설정 큐잉. items = [(id, value), ...]."""
+        self._enqueue(("zerocomp", list(items)))
+
+    def read_zerocomp(self, ids, callback) -> None:
+        """영점(오프셋) 읽기 요청. 결과 dict를 callback(res)로 전달."""
+        self._enqueue(("readzero", (list(ids), callback)))
+
     def safe_power(self, on: bool) -> None:
         """안전 전원: 끄기=Safe Sit→7초→OFF, 켜기=ON→Safe Up."""
         self._enqueue(("safepwr", bool(on)))
@@ -145,6 +153,17 @@ class MotionRunner:
         elif kind == "readpos":
             ids, cb = payload
             res = r.read_positions(ids)
+            if cb:
+                try:
+                    cb(res)
+                except Exception:
+                    pass
+            ok = True
+        elif kind == "zerocomp":
+            ok = bool(r.send_zerocomp(payload))
+        elif kind == "readzero":
+            ids, cb = payload
+            res = r.read_zerocomp(ids)
             if cb:
                 try:
                     cb(res)

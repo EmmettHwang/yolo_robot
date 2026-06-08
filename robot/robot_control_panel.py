@@ -128,6 +128,39 @@ class ControlPanel(tk.Toplevel):
                                    fg="#6a1b9a")
         self.read_label.pack(pady=(2, 4))
 
+        # 영점(오프셋) 보정 — Set/Get LSM ZeroComp Value (범위 -12~+12)
+        off = ttk.LabelFrame(body, text="  영점(오프셋) 보정  −12 ~ +12  ")
+        off.pack(fill="x", padx=10, pady=6)
+        orow = tk.Frame(off); orow.pack(fill="x", padx=8, pady=6)
+        tk.Label(orow, text="관절", font=("Malgun Gothic", 9)).pack(side="left")
+        self.off_target = tk.StringVar(value=motor_map.joint_label(18))
+        oc = ttk.Combobox(orow, textvariable=self.off_target,
+                          state="readonly", width=22,
+                          values=[motor_map.joint_label(i)
+                                  for i in motor_map.ALL_IDS])
+        oc.pack(side="left", padx=6)
+        oc.bind("<<ComboboxSelected>>", lambda e: self._read_offset())
+
+        self.off_val = tk.IntVar(value=0)
+        ofr = tk.Frame(off); ofr.pack(fill="x", padx=8)
+        tk.Label(ofr, text="오프셋", width=6).pack(side="left")
+        tk.Scale(ofr, from_=-12, to=12, orient="horizontal", resolution=1,
+                 variable=self.off_val).pack(side="left", fill="x", expand=True)
+        tk.Spinbox(ofr, from_=-12, to=12, width=5,
+                   textvariable=self.off_val).pack(side="left", padx=(6, 0))
+
+        obtn = tk.Frame(off); obtn.pack(pady=4)
+        tk.Button(obtn, text="현재 읽기", cursor="hand2",
+                  command=self._read_offset).pack(side="left", padx=4)
+        tk.Button(obtn, text="✓ 오프셋 적용", bg="#6a1b9a", fg="white",
+                  relief="flat", cursor="hand2",
+                  command=self._apply_offset).pack(side="left", padx=4)
+        tk.Button(obtn, text="0으로", cursor="hand2",
+                  command=lambda: self.off_val.set(0)).pack(side="left", padx=4)
+        self.off_label = tk.Label(off, text="관절을 고르면 현재 오프셋을 읽어옵니다.",
+                                  font=("Malgun Gothic", 9), fg="#6a1b9a")
+        self.off_label.pack(pady=(2, 6))
+
         tk.Label(body, text=f"※ 위치 범위 {POS_MIN}~{POS_MAX} (매뉴얼에 동작범위 "
                  "명시 없음 → 예제값 ±100 기준 보수적 제한). 작은 값부터 시험하세요.",
                  font=("Malgun Gothic", 8), fg="#999",
@@ -231,6 +264,44 @@ class ControlPanel(tk.Toplevel):
         val = res.get(jid)
         if val is not None and POS_MIN <= val <= POS_MAX:
             self.pos_val.set(val)               # 슬라이더에도 반영
+
+    # ---------- 영점(오프셋) 보정 ----------
+    def _off_joint(self):
+        try:
+            return int(self.off_target.get().split(" - ")[0])
+        except Exception:
+            return None
+
+    def _read_offset(self):
+        jid = self._off_joint()
+        if jid is None or not self.runner:
+            return
+        self.off_label.config(text="현재 오프셋 읽는 중...", fg="#6a1b9a")
+        self.runner.read_zerocomp([jid], self._on_read_offset)
+
+    def _on_read_offset(self, res):
+        try:
+            self.after(0, lambda r=res: self._show_offset(r))
+        except Exception:
+            pass
+
+    def _show_offset(self, res):
+        jid = self._off_joint()
+        val = res.get(jid) if res else None
+        if val is None:
+            self.off_label.config(text="오프셋 읽기 실패(응답 없음)", fg="#c62828")
+            return
+        v = max(-12, min(12, int(val)))
+        self.off_val.set(v)
+        self.off_label.config(text=f"현재 오프셋 → {val}", fg="#2e7d32")
+
+    def _apply_offset(self):
+        jid = self._off_joint()
+        if jid is None or not self.runner:
+            return
+        val = int(self.off_val.get())
+        self.runner.zerocomp([(jid, val)])
+        self.off_label.config(text=f"✓ ID{jid} 오프셋 {val} 적용됨", fg="#2e7d32")
 
     def destroy(self):
         self._alive = False

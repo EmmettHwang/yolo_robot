@@ -34,6 +34,8 @@ EXE_LED = 5
 EXE_MOTION = 12      # 0x0C
 
 GET_NOWPOS = 5       # DATA GET: Get LSMs NowPosition
+GET_ZEROCOMP = 16    # DATA GET: Get LSMs ZeroCompValue (영점/오프셋)
+SET_ZEROCOMP = 16    # DATA SET: Set LSM ZeroComp Value (영점/오프셋, -12~12)
 
 
 def build(type_, code, para, src=(0, 0), dest=(0, 0)) -> bytearray:
@@ -74,6 +76,28 @@ def position(positions) -> bytearray:
 def power(on: bool) -> bytearray:
     """Exe LSM PWR ON/OFF: para = [0/1]."""
     return build(TYPE_EXE, EXE_PWR, [1 if on else 0])
+
+
+# ---------- DATA SET / GET : 영점(ZeroComp) 오프셋 ----------
+def set_zerocomp(items) -> bytearray:
+    """Set LSM ZeroComp Value: items = [(id, value_signed16), ...]
+    → para = id, ZCompH, ZCompL × N. (영점 보정값, 매뉴얼 권장 -12~12)"""
+    para = []
+    for jid, val in items:
+        val = max(-32768, min(32767, int(val)))
+        h, l = struct.pack(">h", val)
+        para += [jid & 0xFF, h, l]
+    return build(TYPE_SET, SET_ZEROCOMP, para)
+
+
+def get_zerocomp(ids) -> bytearray:
+    """Get LSMs ZeroCompValue 요청: para = [id1, id2, ...]."""
+    return build(TYPE_GET, GET_ZEROCOMP, list(ids))
+
+
+def parse_zerocomp(data: bytes) -> dict:
+    """ZeroComp 응답에서 {id: 오프셋(signed16)} 추출. (id,ZH,ZL × N — 위치와 동일 레이아웃)"""
+    return parse_positions(data)
 
 
 # ---------- DATA GET ----------

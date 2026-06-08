@@ -156,6 +156,34 @@ class HumanoidRobot:
         """모터 전원(토크) ON/OFF."""
         return self._write(protocol.power(on))
 
+    def send_zerocomp(self, items) -> bool:
+        """영점(오프셋) 설정. items = [(id, value), ...] (권장 -12~12)."""
+        return self._write(protocol.set_zerocomp(items))
+
+    def read_zerocomp(self, ids) -> dict:
+        """현재 영점(오프셋) 읽기. {id: 값}. 실패 시 {}."""
+        if not self.is_connected:
+            return {}
+        ids = list(ids)
+        expected = 12 + 3 * len(ids)
+        try:
+            try:
+                self.ser.reset_input_buffer()
+            except Exception:
+                pass
+            self.ser.write(protocol.get_zerocomp(ids))
+            self.ser.flush()
+            old = self.ser.timeout
+            self.ser.timeout = 0.3
+            try:
+                data = self.ser.read(expected)
+            finally:
+                self.ser.timeout = old
+        except Exception:
+            self.close()
+            return {}
+        return protocol.parse_zerocomp(data)
+
     def read_positions(self, ids) -> dict:
         """현재 위치 읽기. {id: 위치}. 응답 없거나 실패 시 {}."""
         if not self.is_connected:
