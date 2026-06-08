@@ -273,9 +273,10 @@ class MotionRunner:
                 sound.player.play_effect(sound.FX_START)   # 동작 시작 효과음
             if self.robot:
                 self.robot.send_motion(motion)
-            # 동작 유지 (mp3 길이만큼; 중지 전까지 끊지 않음)
+            # 동작 유지 (지정 지속시간/ mp3 길이만큼)
             if self._wait(hold):
                 return
+            sound.player.stop()        # 지속시간 종료 → 재생 중인 mp3 정지
             # 페이드 아웃
             for k in range(STEP, -1, -1):
                 f = k / STEP

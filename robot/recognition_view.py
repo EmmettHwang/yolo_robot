@@ -72,6 +72,8 @@ class RecognitionView(ttk.Frame):
 
         self.yolo_on = True
         self.sound_on = True
+        self.conf_threshold = CONF_THRESHOLD     # 이 값 미만은 표시/트리거 안 함
+        self.max_det = 10                        # 최대 인식 개수
         self.auto_start = tk.BooleanVar(master=self, value=True)  # 탭 열면 자동 시작
         self.running = False
         self._lock = threading.Lock()
@@ -133,6 +135,34 @@ class RecognitionView(ttk.Frame):
                    command=self._reload_mapping).pack(side="left", padx=(8, 0))
         tk.Checkbutton(ctrl, text="자동 시작", variable=self.auto_start,
                        font=("Malgun Gothic", 9)).pack(side="left", padx=(8, 0))
+
+        # --- 둘째 줄: 신뢰도 임계값 / 최대 인식 개수 ---
+        ctrl2 = tk.Frame(panel); ctrl2.pack(fill="x", padx=8, pady=(0, 4))
+        tk.Label(ctrl2, text="신뢰도≥", font=("Malgun Gothic", 9)).pack(
+            side="left")
+        self._conf_var = tk.DoubleVar(master=self, value=self.conf_threshold)
+        self._conf_lbl = tk.Label(ctrl2, text=f"{self.conf_threshold:.2f}",
+                                  width=4, font=("Consolas", 9))
+
+        def _on_conf(v):
+            self.conf_threshold = float(v)
+            self._conf_lbl.config(text=f"{self.conf_threshold:.2f}")
+        tk.Scale(ctrl2, from_=0.10, to=0.95, resolution=0.05,
+                 orient="horizontal", variable=self._conf_var, showvalue=False,
+                 length=160, command=_on_conf).pack(side="left")
+        self._conf_lbl.pack(side="left", padx=(2, 12))
+        tk.Label(ctrl2, text="최대 개수", font=("Malgun Gothic", 9)).pack(
+            side="left")
+        self._maxdet_var = tk.IntVar(master=self, value=self.max_det)
+
+        def _on_maxdet(*_):
+            try:
+                self.max_det = max(1, int(self._maxdet_var.get()))
+            except Exception:
+                pass
+        self._maxdet_var.trace_add("write", _on_maxdet)
+        tk.Spinbox(ctrl2, from_=1, to=50, width=4,
+                   textvariable=self._maxdet_var).pack(side="left", padx=(4, 0))
 
         # --- 본문: 조이스틱 | 디스플레이 | 그리드 ---
         body = tk.Frame(panel); body.pack(fill="x", padx=8, pady=(0, 8))
@@ -309,7 +339,9 @@ class RecognitionView(ttk.Frame):
                 break
 
             if self.yolo_on and self._fcount % INFER_EVERY == 0:
-                dets = yolo_mod.infer(self.model, frame, INFER_SIZE)
+                dets = yolo_mod.infer(self.model, frame, INFER_SIZE,
+                                      conf=self.conf_threshold,
+                                      max_det=self.max_det)
                 with self._lock:
                     self._dets = dets
                 self._handle_triggers(dets)
@@ -329,7 +361,7 @@ class RecognitionView(ttk.Frame):
 
         now = time.time()
         busy = bool(self.runner and self.runner.busy)
-        if (top_label and top_conf >= CONF_THRESHOLD
+        if (top_label and top_conf >= self.conf_threshold
                 and top_label != self._last_acted
                 and not busy                       # 반응 진행 중이면 새 트리거 차단
                 and now - self._last_trigger > TRIGGER_COOLDOWN):
@@ -359,7 +391,7 @@ class RecognitionView(ttk.Frame):
                 self._last_acted = top_label
                 self._last_trigger = now
 
-        if top_label == "" or top_conf < CONF_THRESHOLD:
+        if top_label == "" or top_conf < self.conf_threshold:
             self._empty += 1
             if self._empty > 20:
                 self._last_acted = ""

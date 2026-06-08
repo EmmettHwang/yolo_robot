@@ -38,9 +38,10 @@ def load_model():
     return m, "기본(다운로드)"
 
 
-def infer(model, frame, imgsz=320):
-    """프레임 추론 → dets ndarray [[x1,y1,x2,y2,conf,cls], ...] (BGR 입력 OK)."""
-    res = model(frame, imgsz=imgsz, verbose=False)
+def infer(model, frame, imgsz=320, conf=0.25, max_det=300):
+    """프레임 추론 → dets ndarray [[x1,y1,x2,y2,conf,cls], ...] (BGR 입력 OK).
+    conf 미만은 제외, 최대 max_det 개."""
+    res = model(frame, imgsz=imgsz, conf=conf, max_det=max_det, verbose=False)
     r = res[0]
     b = r.boxes
     if b is None or len(b) == 0:
