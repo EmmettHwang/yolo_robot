@@ -33,6 +33,8 @@ EXE_POSMOVE_SPEED = 4
 EXE_LED = 5
 EXE_MOTION = 12      # 0x0C
 
+GET_NOWPOS = 5       # DATA GET: Get LSMs NowPosition
+
 
 def build(type_, code, para, src=(0, 0), dest=(0, 0)) -> bytearray:
     """공통 패킷 빌드 + 체크섬."""
@@ -72,3 +74,27 @@ def position(positions) -> bytearray:
 def power(on: bool) -> bytearray:
     """Exe LSM PWR ON/OFF: para = [0/1]."""
     return build(TYPE_EXE, EXE_PWR, [1 if on else 0])
+
+
+# ---------- DATA GET ----------
+def get_positions(ids) -> bytearray:
+    """Get LSMs NowPosition 요청: para = [id1, id2, ...]."""
+    return build(TYPE_GET, GET_NOWPOS, list(ids))
+
+
+def parse_positions(data: bytes) -> dict:
+    """응답 패킷에서 {id: 위치(signed16)} 추출. para = id,PosH,PosL × N."""
+    res = {}
+    if not data:
+        return res
+    i = data.find(b"\xff\xff\x4c\x53")
+    if i < 0 or len(data) - i < 12:
+        return res
+    pkt = data[i:]
+    length = pkt[10]
+    para = pkt[11:11 + length]
+    for j in range(0, len(para) - 2, 3):
+        jid = para[j]
+        pos = struct.unpack(">h", bytes(para[j + 1:j + 3]))[0]
+        res[jid] = pos
+    return res

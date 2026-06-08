@@ -156,6 +156,30 @@ class HumanoidRobot:
         """모터 전원(토크) ON/OFF."""
         return self._write(protocol.power(on))
 
+    def read_positions(self, ids) -> dict:
+        """현재 위치 읽기. {id: 위치}. 응답 없거나 실패 시 {}."""
+        if not self.is_connected:
+            return {}
+        ids = list(ids)
+        expected = 12 + 3 * len(ids)
+        try:
+            try:
+                self.ser.reset_input_buffer()
+            except Exception:
+                pass
+            self.ser.write(protocol.get_positions(ids))
+            self.ser.flush()
+            old = self.ser.timeout
+            self.ser.timeout = 0.3          # 폴링용 짧은 읽기 타임아웃
+            try:
+                data = self.ser.read(expected)
+            finally:
+                self.ser.timeout = old
+        except Exception:
+            self.close()
+            return {}
+        return protocol.parse_positions(data)
+
     # ---------- 컨텍스트 매니저 ----------
     def __enter__(self):
         self.connect()

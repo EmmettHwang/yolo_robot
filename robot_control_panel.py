@@ -27,6 +27,8 @@ class ControlPanel(tk.Toplevel):
         self.resizable(False, False)
         self._led_dirty = False
         self._pos_dirty = False
+        self._manual = False
+        self._manual_after = None
         self._alive = True
         self._build()
         self._flush()                # 실시간 전송 루프 시작
@@ -104,8 +106,16 @@ class ControlPanel(tk.Toplevel):
         tk.Scale(fr2, from_=0, to=100, orient="horizontal", variable=self.torq,
                  command=lambda e: self._mark_pos()).pack(
             side="left", fill="x", expand=True)
-        tk.Button(pos, text="중립(0)으로", cursor="hand2",
-                  command=self._center_pos).pack(pady=4)
+        prow2 = tk.Frame(pos); prow2.pack(pady=4)
+        tk.Button(prow2, text="중립(0)으로", cursor="hand2",
+                  command=self._center_pos).pack(side="left", padx=4)
+        self.manual_btn = tk.Button(
+            prow2, text="✋ 수동 조절", bg="#607d8b", fg="white", relief="flat",
+            cursor="hand2", command=self._toggle_manual)
+        self.manual_btn.pack(side="left", padx=4)
+        self.read_label = tk.Label(pos, text="", font=("Consolas", 10),
+                                   fg="#6a1b9a")
+        self.read_label.pack(pady=(2, 4))
 
         tk.Label(self, text=f"※ 위치 범위 {POS_MIN}~{POS_MAX} (매뉴얼에 동작범위 "
                  "명시 없음 → 예제값 ±100 기준 보수적 제한). 작은 값부터 시험하세요.",
@@ -128,7 +138,7 @@ class ControlPanel(tk.Toplevel):
                 self._led_dirty = False
                 r, g, b = self.r.get(), self.g.get(), self.b.get()
                 self.runner.led([(i, r, g, b) for i in self._ids_for_target()])
-            if self._pos_dirty:
+            if self._pos_dirty and not self._manual:   # 수동(토크해제) 중엔 전송 안 함
                 self._pos_dirty = False
                 jid = self._pos_joint()
                 if jid is not None:
@@ -164,6 +174,54 @@ class ControlPanel(tk.Toplevel):
         self.pos_val.set(0)
         self._mark_pos()
 
+    # ---------- 수동 조절(토크 해제 + 위치 읽기) ----------
+    def _toggle_manual(self):
+        self._manual = not self._manual
+        if self._manual:
+            self.manual_btn.config(text="■ 수동 끝", bg="#c62828")
+            self.read_label.config(text="토크 해제됨 — 손으로 관절을 움직여 보세요",
+                                   fg="#c62828")
+            if self.runner:
+                self.runner.power(False)        # 토크 off → 손으로 조작 가능
+            self._poll_manual()
+        else:
+            self.manual_btn.config(text="✋ 수동 조절", bg="#607d8b")
+            self.read_label.config(text="", fg="#6a1b9a")
+            if self.runner:
+                self.runner.power(True)         # 토크 on → 현재 자세 유지
+
+    def _poll_manual(self):
+        if not self._manual or not self._alive:
+            return
+        if self.runner:
+            jid = self._pos_joint()
+            if jid is not None:
+                self.runner.read_positions([jid], self._on_read)
+        self._manual_after = self.after(300, self._poll_manual)
+
+    def _on_read(self, res):
+        # 러너 스레드 → UI 스레드로 마샬
+        try:
+            self.after(0, lambda r=res: self._show_read(r))
+        except Exception:
+            pass
+
+    def _show_read(self, res):
+        if not res:
+            self.read_label.config(text="위치 읽기 실패(응답 없음)", fg="#c62828")
+            return
+        txt = "  ".join(f"ID{k}={v}" for k, v in res.items())
+        self.read_label.config(text=f"읽은 위치 → {txt}", fg="#2e7d32")
+        jid = self._pos_joint()
+        val = res.get(jid)
+        if val is not None and POS_MIN <= val <= POS_MAX:
+            self.pos_val.set(val)               # 슬라이더에도 반영
+
     def destroy(self):
         self._alive = False
+        if self._manual_after is not None:
+            try:
+                self.after_cancel(self._manual_after)
+            except Exception:
+                pass
         super().destroy()

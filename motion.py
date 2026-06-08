@@ -69,6 +69,10 @@ class MotionRunner:
     def power(self, on: bool) -> None:
         self._enqueue(("pwr", bool(on)))
 
+    def read_positions(self, ids, callback) -> None:
+        """위치 읽기 요청. 결과 dict를 callback(res)로 전달(러너 스레드에서 호출)."""
+        self._enqueue(("readpos", (list(ids), callback)))
+
     def safe_power(self, on: bool) -> None:
         """안전 전원: 끄기=Safe Sit→7초→OFF, 켜기=ON→Safe Up."""
         self._enqueue(("safepwr", bool(on)))
@@ -134,6 +138,15 @@ class MotionRunner:
             ok = True
         elif kind == "safepwr":
             self._run_safe_power(payload)
+            ok = True
+        elif kind == "readpos":
+            ids, cb = payload
+            res = r.read_positions(ids)
+            if cb:
+                try:
+                    cb(res)
+                except Exception:
+                    pass
             ok = True
         else:
             ok = True
