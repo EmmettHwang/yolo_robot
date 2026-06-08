@@ -44,8 +44,13 @@ class ControlPanel(tk.Toplevel):
 
     def _build(self):
         from scrollable import make_scrollable, fit_window
-        # 내용이 한 화면에 다 들어오도록 크게(스크롤 없이). 화면보다 크면 자동 축소.
-        fit_window(self, 760, 1040, parent=self.master)   # 메인 윈도 중앙
+        fit_window(self, 560, 760, parent=self.master)   # 메인 윈도 중앙
+        # 닫기 버튼은 항상 보이는 고정 푸터(스크롤 안 됨)
+        footer = tk.Frame(self); footer.pack(side="bottom", fill="x")
+        tk.Button(footer, text="닫기", width=14, bg="#607d8b", fg="white",
+                  relief="flat", cursor="hand2",
+                  font=("Malgun Gothic", 11, "bold"),
+                  command=self.destroy).pack(pady=8)
         body = make_scrollable(self)
         # 전원
         pw = ttk.LabelFrame(body, text="  전원(토크)  ")
@@ -141,8 +146,6 @@ class ControlPanel(tk.Toplevel):
         tk.Button(prow0, text="🤖 BasePose (기본자세)", bg="#455a64", fg="white",
                   relief="flat", cursor="hand2",
                   command=self._base_pose).pack(side="left", padx=4)
-        tk.Label(prow0, text="① ZeroPose로 0자세 → ② 관절별 오프셋 보정 → ③ BasePose",
-                 font=("Malgun Gothic", 8), fg="#888").pack(side="left", padx=6)
 
         orow = tk.Frame(off); orow.pack(fill="x", padx=8, pady=(4, 2))
         tk.Label(orow, text="관절", font=("Malgun Gothic", 9)).pack(side="left")
@@ -157,15 +160,16 @@ class ControlPanel(tk.Toplevel):
         self.off_val = tk.IntVar(value=0)
         ofr = tk.Frame(off); ofr.pack(fill="x", padx=8)
         tk.Label(ofr, text="오프셋", width=6).pack(side="left")
-        # 슬라이더/스핀박스 조정 시 실시간 적용
+        # 슬라이더/스핀박스 조정 시 실시간 적용 (슬라이더 두껍게 → 스핀과 높이 맞춤)
         tk.Scale(ofr, from_=-12, to=12, orient="horizontal", resolution=1,
-                 variable=self.off_val,
+                 variable=self.off_val, width=24, sliderlength=28,
                  command=lambda e: self._mark_off()).pack(
             side="left", fill="x", expand=True)
         sp = tk.Spinbox(ofr, from_=-12, to=12, width=5,
+                        font=("Consolas", 14, "bold"),
                         textvariable=self.off_val,
                         command=self._mark_off)
-        sp.pack(side="left", padx=(6, 0))
+        sp.pack(side="left", padx=(6, 0), ipady=6)
         sp.bind("<KeyRelease>", lambda e: self._mark_off())
 
         obtn = tk.Frame(off); obtn.pack(pady=4)
@@ -183,10 +187,6 @@ class ControlPanel(tk.Toplevel):
                  "명시 없음 → 예제값 ±100 기준 보수적 제한). 작은 값부터 시험하세요.",
                  font=("Malgun Gothic", 8), fg="#999",
                  wraplength=420, justify="left").pack(pady=(0, 10), padx=10)
-        tk.Button(body, text="닫기", width=14, bg="#607d8b", fg="white",
-                  relief="flat", cursor="hand2",
-                  font=("Malgun Gothic", 11, "bold"),
-                  command=self.destroy).pack(pady=(0, 14))
         self._upd_swatch()
 
     # ---------- 실시간 전송 ----------

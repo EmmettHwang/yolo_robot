@@ -133,12 +133,12 @@ class RecognitionView(ttk.Frame):
     # UI
     # ============================================================
     def _build(self):
-        # 상단: 카메라
-        self.canvas = tk.Canvas(self, width=640, height=400, bg="#111111",
+        # 상단: 카메라 (이전보다 20% 작게 → 하단 패널 공간 확보)
+        self.canvas = tk.Canvas(self, width=512, height=320, bg="#111111",
                                 highlightthickness=0, cursor="hand2")
         self.canvas.pack(fill="both", expand=True, padx=6, pady=6)
-        self.img_id = self.canvas.create_image(320, 200, anchor="center")
-        self.canvas.create_text(320, 200,
+        self.img_id = self.canvas.create_image(256, 160, anchor="center")
+        self.canvas.create_text(256, 160,
                                 text="‘연결 & 시작’을 누르세요 (자동 시작은 우측 체크박스)",
                                 fill="#888", font=("Malgun Gothic", 12),
                                 tags="hint")
@@ -209,14 +209,7 @@ class RecognitionView(ttk.Frame):
                    textvariable=self._maxdet_var).pack(side="left", padx=(6, 0),
                                                        ipady=4)
 
-        # 설정 저장 버튼 (시인성 강조)
-        tk.Button(ctrl2, text="💾 설정 저장", bg="#1565c0", fg="white",
-                  activebackground="#0d47a1", activeforeground="white",
-                  relief="flat", cursor="hand2",
-                  font=("Malgun Gothic", 12, "bold"),
-                  command=self._save_settings).pack(side="left", padx=(16, 0),
-                                                    ipadx=10, ipady=4)
-
+        # (설정 저장은 동작 버튼 아래의 통합 저장 버튼으로 이동)
         # 모델 표시 (최대 개수 옆에 크게)
         tk.Label(ctrl2, text="모델:", font=("Malgun Gothic", 12, "bold")).pack(
             side="left", padx=(20, 4))
@@ -255,8 +248,14 @@ class RecognitionView(ttk.Frame):
         gwrap = tk.Frame(body); gwrap.pack(side="left", padx=(10, 0))
         tk.Label(gwrap, text="동작 버튼 (4×4)",
                  font=("Malgun Gothic", 9, "bold")).pack()
-        self.grid = MotionGrid(gwrap, on_action=self._on_grid)
+        self.grid = MotionGrid(gwrap, on_action=self._on_grid, show_save=False)
         self.grid.pack()
+        # 통합 저장: 인식 설정(신뢰도·최대개수) + 동작 버튼을 한 번에 저장
+        tk.Button(gwrap, text="💾 설정·동작 저장", bg="#1565c0", fg="white",
+                  activebackground="#0d47a1", activeforeground="white",
+                  relief="flat", cursor="hand2",
+                  font=("Malgun Gothic", 10, "bold"),
+                  command=self._save_all).pack(fill="x", pady=(6, 0), ipady=3)
 
         self._set_manual_enabled(not self.yolo_on)   # YOLO ON이면 수동 비활성
 
@@ -615,18 +614,22 @@ class RecognitionView(ttk.Frame):
         if self.runner:
             self.runner.effects_on = self.sound_on
 
-    def _save_settings(self):
-        """인식 창의 설정(신뢰도/최대 개수)을 저장한다."""
+    def _save_all(self):
+        """인식 설정(신뢰도·최대개수)과 동작 버튼(4×4)을 한 번에 저장."""
         try:
             self.max_det = max(1, int(self._maxdet_var.get()))
         except Exception:
             pass
         self.conf_threshold = float(self._conf_var.get())
         _save_rec_settings(self.conf_threshold, self.max_det)
+        try:
+            self.grid.save()       # 동작 버튼(동작+사운드)도 함께 저장
+        except Exception:
+            pass
         messagebox.showinfo(
-            "설정 저장",
-            f"신뢰도 ≥ {self.conf_threshold:.2f}\n"
-            f"최대 개수 = {self.max_det}\n저장되었습니다.")
+            "저장",
+            f"인식 설정(신뢰도 ≥ {self.conf_threshold:.2f}, 최대 {self.max_det})과\n"
+            f"동작 버튼(4×4)을 저장했습니다.")
 
     def reload_mapping(self):
         """객체 반응 매핑을 조용히 다시 불러온다(자동 호출용)."""

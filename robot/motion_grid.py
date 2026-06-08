@@ -36,12 +36,17 @@ def _default_entries():
 
 
 class MotionGrid(tk.Frame):
-    def __init__(self, master, on_action=None, **kw):
+    def __init__(self, master, on_action=None, show_save=True, **kw):
         super().__init__(master, **kw)
         self.on_action = on_action
+        self.show_save = show_save        # 자체 저장 버튼 표시 여부
         self.entries = self._load()
         self.buttons = []
         self._build()
+
+    def save(self) -> None:
+        """외부에서 호출하는 조용한 저장(메시지 없음)."""
+        self._save()
 
     # ---------- 저장/복원 ----------
     def _load(self) -> list:
@@ -88,8 +93,9 @@ class MotionGrid(tk.Frame):
         bar = tk.Frame(self); bar.pack(fill="x", pady=(6, 0))
         tk.Label(bar, text="좌클릭=실행 · 우클릭=동작/사운드 설정", fg="#888",
                  font=("Malgun Gothic", 8)).pack(side="left")
-        tk.Button(bar, text="💾 저장", cursor="hand2",
-                  command=self._save_btn).pack(side="right")
+        if self.show_save:
+            tk.Button(bar, text="💾 저장", cursor="hand2",
+                      command=self._save_btn).pack(side="right")
 
     def _refresh(self) -> None:
         for i, b in enumerate(self.buttons):
