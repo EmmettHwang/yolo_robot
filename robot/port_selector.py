@@ -443,9 +443,10 @@ class PortSelector:
             bt, bg="#e8f0fe", fg="#1565c0", justify="left",
             font=("Malgun Gothic", 9),
             text=("ℹ 휴머노이드(FB153)는 처음 한 번만 Windows에서 블루투스 페어링하면 됩니다.\n"
-                  "   1) 아래 '블루투스 설정 열기' → '장치 추가' → 블루투스\n"
-                  "   2) 'FB153'(또는 '알 수 없는 장치') 선택 →  PIN 입력:  0000\n"
-                  "   3) 페어링되면 '페어링 후 다시 검색'을 누르세요 (자동으로 포트를 잡습니다)"),
+                  "   1) 아래 '블루투스 설정 열기' → '장치 추가' → 'Bluetooth'\n"
+                  "        → '알 수 없는 장치 또는 FB153' 선택\n"
+                  "   2) PIN 0000 입력 후 앱으로 돌아와 '페어링 후 다시 검색'을 누르세요\n"
+                  "        (자동으로 포트를 잡습니다)"),
         ).pack(anchor="w", padx=8, pady=(6, 4))
         btn_bt = tk.Frame(bt, bg="#e8f0fe"); btn_bt.pack(anchor="w", padx=8,
                                                          pady=(0, 6))
