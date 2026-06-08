@@ -13,6 +13,7 @@ trainer.py
 
 import os
 import sys
+import csv
 import shutil
 import threading
 import subprocess
@@ -41,6 +42,11 @@ from paths import (
 import sound
 
 PY = sys.executable
+# 학습 결과 산출물 위치 (ultralytics: project=runs, name=custom)
+RUN_DIR = os.path.join(RUNS_DIR, "custom")
+RESULTS_CSV = os.path.join(RUN_DIR, "results.csv")
+RESULTS_PNG = os.path.join(RUN_DIR, "results.png")
+
 _FONT = ("Malgun Gothic", 11)
 _FONT_BIG = ("Malgun Gothic", 13, "bold")
 SIZES = [144, 200, 320, 640]
@@ -179,6 +185,42 @@ def build_data_yaml() -> str:
         f.write(f"nc: {len(classes)}\n")
         f.write(f"names: {names}\n")
     return DATA_YAML
+
+
+def read_results_metrics():
+    """results.csv 의 마지막 에폭에서 mAP/정밀도/재현율 등을 읽어 dict 로 반환.
+
+    실패 시 빈 dict. 키: mAP50, mAP5095, precision, recall, epochs
+    """
+    if not os.path.exists(RESULTS_CSV):
+        return {}
+    try:
+        with open(RESULTS_CSV, encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        if not rows:
+            return {}
+        last = {k.strip(): v for k, v in rows[-1].items() if k is not None}
+
+        def pick(must, excl=()):
+            """키에 must 포함, excl 은 모두 미포함인 컬럼 값을 float 으로."""
+            for key, val in last.items():
+                kl = key.lower()
+                if must in kl and not any(e in kl for e in excl):
+                    try:
+                        return float(val)
+                    except Exception:
+                        return None
+            return None
+
+        return {
+            "mAP50": pick("map50", excl=("map50-95",)),
+            "mAP5095": pick("map50-95"),
+            "precision": pick("precision"),
+            "recall": pick("recall"),
+            "epochs": len(rows),
+        }
+    except Exception:
+        return {}
 
 
 # ============================================================
@@ -537,7 +579,7 @@ class TrainTab(ttk.Frame):
             self.proc.wait()
             if self.proc.returncode == 0:
                 self._append(f"\n✓ 학습 완료. 결과: {BEST_WEIGHTS}\n")
-                self.after(0, self._prompt_save)
+                self.after(0, self._show_results)
             else:
                 self._append(f"\n✗ 학습 실패 (코드 {self.proc.returncode})\n")
         except Exception as e:
@@ -549,31 +591,137 @@ class TrainTab(ttk.Frame):
             except Exception:
                 pass
 
-    def _prompt_save(self):
-        if os.path.exists(BEST_WEIGHTS):
-            name = simpledialog.askstring(
-                "모델 저장",
-                "저장할 모델 이름 (./model 폴더, 취소=저장 안 함):",
-                parent=self.winfo_toplevel())
-            if name:
-                name = name.strip()
-                if not name.endswith(".pt"):
-                    name += ".pt"
-                os.makedirs(MODELS_DIR, exist_ok=True)
-                dst = os.path.join(MODELS_DIR, name)
-                try:
-                    shutil.copy(BEST_WEIGHTS, dst)
-                    if messagebox.askyesno(
-                            "모델 교체",
-                            "이 모델을 인식에 바로 적용(active)할까요?"):
-                        shutil.copy(dst, ACTIVE_MODEL)
-                        set_active_name(name)        # 원본 이름 기록
-                    messagebox.showinfo(
-                        "완료", f"저장됨:\n{dst}\n③ 모델 적용 탭으로 이동합니다.")
-                except Exception as e:
-                    messagebox.showerror("오류", f"저장 실패: {e}")
-        # 학습이 끝났으니 ③ 모델 적용 단계로 이동
+    # ---------- 학습 결과 (성능 + 그래프) ----------
+    def _show_results(self):
+        """학습 곡선 그래프 + 최종 mAP/정밀도/재현율을 보여주고 저장/버리기 선택."""
+        m = read_results_metrics()
+        top = tk.Toplevel(self.winfo_toplevel())
+        top.title("학습 결과 — 성능 확인")
+        top.configure(bg=BG)
+        from scrollable import make_scrollable, fit_window
+        fit_window(top, 820, 760)
+        body = make_scrollable(top, bg=BG)
+
+        tk.Label(body, text="📊 학습 결과", font=("Malgun Gothic", 15, "bold"),
+                 bg=BG).pack(pady=(12, 2))
+        ep = m.get("epochs")
+        tk.Label(body, text=(f"{ep} 에폭 학습 완료" if ep else "학습 완료"),
+                 font=("Malgun Gothic", 10), fg="#555", bg=BG).pack()
+
+        # ----- 성능 지표 카드 -----
+        cards = tk.Frame(body, bg=BG); cards.pack(pady=10)
+        metrics = [
+            ("mAP@50", m.get("mAP50"), "정확도(겹침 50%) — 핵심 지표"),
+            ("mAP@50-95", m.get("mAP5095"), "더 엄격한 정확도"),
+            ("정밀도(P)", m.get("precision"), "맞다고 한 것 중 실제 맞음"),
+            ("재현율(R)", m.get("recall"), "실제 중 찾아낸 비율"),
+        ]
+        for i, (label, val, desc) in enumerate(metrics):
+            self._metric_card(cards, label, val, desc, col=i)
+
+        # mAP50 기준 한줄 평가
+        verdict, vcolor = self._verdict(m.get("mAP50"))
+        tk.Label(body, text=verdict, font=("Malgun Gothic", 11, "bold"),
+                 fg=vcolor, bg=BG).pack(pady=(2, 8))
+
+        # ----- 학습 곡선 그래프 -----
+        if _HAS_PIL and os.path.exists(RESULTS_PNG):
+            try:
+                img = Image.open(RESULTS_PNG)
+                maxw = 760
+                if img.width > maxw:
+                    h = int(img.height * maxw / img.width)
+                    img = img.resize((maxw, h))
+                photo = ImageTk.PhotoImage(img)
+                top._graph = photo                  # 참조 유지
+                tk.Label(body, image=photo, bg=BG).pack(padx=10, pady=6)
+            except Exception:
+                pass
+        else:
+            tk.Label(body, text="(학습 곡선 그래프(results.png)를 찾지 못했습니다)",
+                     font=("Malgun Gothic", 9), fg="#999", bg=BG).pack(pady=6)
+
+        # ----- 저장 / 버리기 -----
+        btns = tk.Frame(body, bg=BG); btns.pack(pady=(8, 14))
+        tk.Button(btns, text="💾 이 모델 저장", font=_FONT_BIG, bg=GREEN,
+                  fg="white", relief="flat", cursor="hand2", padx=16, pady=4,
+                  command=lambda: self._save_model(top)).pack(side="left",
+                                                              padx=6)
+        tk.Button(btns, text="🗑 버리기", font=_FONT_BIG, bg="#c62828",
+                  fg="white", relief="flat", cursor="hand2", padx=16, pady=4,
+                  command=lambda: self._discard(top)).pack(side="left", padx=6)
+
+        try:
+            top.lift(); top.attributes("-topmost", True)
+            top.after(60, top.focus_force)
+        except Exception:
+            pass
+
+    def _metric_card(self, parent, label, val, desc, col):
+        txt = f"{val*100:.1f}%" if isinstance(val, float) else "—"
+        color = "#999"
+        if isinstance(val, float):
+            color = "#2e7d32" if val >= 0.8 else (ORANGE if val >= 0.5
+                                                  else "#c62828")
+        card = tk.Frame(parent, bg="white", highlightthickness=1,
+                        highlightbackground="#dce3f0")
+        card.grid(row=0, column=col, padx=6, ipadx=10, ipady=8, sticky="n")
+        tk.Label(card, text=label, font=("Malgun Gothic", 10, "bold"),
+                 fg="#555", bg="white").pack()
+        tk.Label(card, text=txt, font=("Consolas", 20, "bold"), fg=color,
+                 bg="white").pack()
+        tk.Label(card, text=desc, font=("Malgun Gothic", 8), fg="#999",
+                 bg="white", wraplength=150, justify="center").pack()
+
+    @staticmethod
+    def _verdict(map50):
+        if not isinstance(map50, float):
+            return "성능 지표를 읽지 못했습니다. 그래프로 직접 확인하세요.", "#999"
+        if map50 >= 0.8:
+            return "👍 우수합니다 — 저장해서 바로 써도 좋아요.", "#2e7d32"
+        if map50 >= 0.5:
+            return "🙂 쓸 만합니다 — 데이터를 더 모으면 더 좋아져요.", ORANGE
+        return "👎 아직 낮습니다 — 데이터를 더 모으거나 에폭을 늘려 다시 학습하세요.", "#c62828"
+
+    def _save_model(self, top):
+        if not os.path.exists(BEST_WEIGHTS):
+            messagebox.showerror("오류", "저장할 모델(best.pt)을 찾지 못했습니다.")
+            return
+        name = simpledialog.askstring(
+            "모델 저장", "저장할 모델 이름 (./model 폴더):", parent=top)
+        if not name:
+            return
+        name = name.strip()
+        if not name.endswith(".pt"):
+            name += ".pt"
+        os.makedirs(MODELS_DIR, exist_ok=True)
+        dst = os.path.join(MODELS_DIR, name)
+        try:
+            shutil.copy(BEST_WEIGHTS, dst)
+            if messagebox.askyesno("모델 교체",
+                                   "이 모델을 인식에 바로 적용(active)할까요?"):
+                shutil.copy(dst, ACTIVE_MODEL)
+                set_active_name(name)        # 원본 이름 기록
+            messagebox.showinfo(
+                "완료", f"저장됨:\n{dst}\n③ 모델 적용 탭으로 이동합니다.")
+        except Exception as e:
+            messagebox.showerror("오류", f"저장 실패: {e}")
+            return
+        try:
+            top.destroy()
+        except Exception:
+            pass
         self.studio.goto("swap")
+
+    def _discard(self, top):
+        if not messagebox.askyesno(
+                "버리기", "이 학습 결과를 저장하지 않고 버릴까요?"):
+            return
+        try:
+            top.destroy()
+        except Exception:
+            pass
+        self._append("• 학습 결과를 버렸습니다. 데이터를 보강해 다시 학습해 보세요.\n")
 
     def is_busy(self) -> bool:
         return self.proc is not None
