@@ -28,10 +28,15 @@ from motion_table import (
 )
 
 
-def obj_label(name: str) -> str:
-    """객체 이름에 한글 번역 병기. (예: 'person' → 'person (사람)')"""
+def obj_label(name: str, num=None) -> str:
+    """객체 이름에 번호 + 한글 번역 병기.
+
+    num 지정 시: '1. person (사람)'  (인식/학습 화면과 일관성)
+    num 없으면 : 'person (사람)'
+    """
     kr = coco_kr(name)
-    return f"{name} ({kr})" if kr else name
+    base = f"{name} ({kr})" if kr else name
+    return f"{num}. {base}" if num is not None else base
 
 NONE_MOTION = "(없음)"
 
@@ -83,6 +88,8 @@ class ActionEditor(ttk.Frame):
             if k not in base:
                 base.append(k)
         self.all_objects = base
+        # 객체 → 표시 번호 (1부터; COCO는 그 순서 = 인식/학습 번호와 동일)
+        self._obj_num = {o: i + 1 for i, o in enumerate(self.all_objects)}
         self.motion_labels = [motion_label(n) for n in ALL_MOTIONS]
         self.rows = []          # 각 행: dict
         self._disp_to_name = {}  # 드롭다운 표시문자열 → 실제 클래스명
@@ -188,7 +195,8 @@ class ActionEditor(ttk.Frame):
         avail = self._available_objects()
         q = self.search_var.get().strip().lower() \
             if hasattr(self, "search_var") else ""
-        pairs = [(obj_label(o), o) for o in avail]   # (표시, 실제명)
+        pairs = [(obj_label(o, self._obj_num.get(o)), o)
+                 for o in avail]                     # (표시, 실제명)
         if q:
             pairs = [(d, o) for d, o in pairs if q in d.lower()]
         self._disp_to_name = {d: o for d, o in pairs}
@@ -233,8 +241,8 @@ class ActionEditor(ttk.Frame):
         fr = tk.Frame(self.body); fr.pack(fill="x", pady=2)
         row["frame"] = fr
 
-        tk.Label(fr, text=obj_label(obj), width=22, anchor="w",
-                 font=("Malgun Gothic", 9)).pack(side="left")
+        tk.Label(fr, text=obj_label(obj, self._obj_num.get(obj)), width=22,
+                 anchor="w", font=("Malgun Gothic", 9)).pack(side="left")
 
         mv = tk.StringVar()
         m = act.get("motion")
