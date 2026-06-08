@@ -77,6 +77,7 @@ class App:
         self.model_label = None
         self._model_loading = False
         self._model_loaded = False
+        self._dev_proc = None
 
         self._header()
 
@@ -140,8 +141,7 @@ class App:
         tk.Button(btns, text="🔧 장치 설정 열기", font=("Malgun Gothic", 11, "bold"),
                   bg="#607d8b", fg="white", relief="flat", cursor="hand2",
                   height=2, width=18,
-                  command=lambda: _launch("port_selector.py")).pack(side="left",
-                                                                    padx=6)
+                  command=self._open_device_settings).pack(side="left", padx=6)
         tk.Button(btns, text="↻ 다시 확인", font=("Malgun Gothic", 11),
                   cursor="hand2", height=2, width=12,
                   command=self._check_devices).pack(side="left", padx=6)
@@ -193,14 +193,45 @@ class App:
     # 시퀀스 흐름
     # ============================================================
     def _start_flow(self):
-        self._check_devices(auto_advance=True)
+        # 시작하면 설정창을 열어 기본 테스트부터 하고 가도록
+        self._check_devices()
+        self._open_device_settings()
 
-    def _check_devices(self, auto_advance=False):
+    def _check_devices(self):
         ok, msg = _validate_devices()
         self.dev_status.config(text=msg, fg=("#2e7d32" if ok else "#c62828"))
-        if ok and auto_advance:
-            # 문제 없으면 잠시 후 자동으로 로봇 학습 탭으로
-            self.root.after(1400, lambda: self.nb.select(self.tab_train))
+        return ok
+
+    def _open_device_settings(self):
+        """장치 설정창(독립 프로세스)을 열고, 닫히면 재검증 후 진행."""
+        if self._dev_proc is not None and self._dev_proc.poll() is None:
+            return                                  # 이미 열려 있음
+        self.dev_status.config(text="🔧 장치 설정창에서 포트·카메라·마이크를 테스트하세요...",
+                               fg="#ef6c00")
+        self._dev_proc = subprocess.Popen(
+            [PY, os.path.join(BASE, "port_selector.py")], cwd=BASE)
+        self._watch_device_proc()
+
+    def _watch_device_proc(self):
+        if self._dev_proc is not None and self._dev_proc.poll() is None:
+            self.root.after(500, self._watch_device_proc)
+            return
+        # 설정창이 닫힘 → 재검증, 정상이면 버튼 애니메이션 후 다음 탭
+        if self._check_devices():
+            self.root.after(
+                500, lambda: self._animate_press(
+                    self.dev_next, lambda: self.nb.select(self.tab_train)))
+
+    def _animate_press(self, btn, then):
+        """버튼이 '눌리는' 애니메이션 후 then() 실행."""
+        try:
+            obg = btn.cget("background")
+            btn.config(relief="sunken", background="#0d47a1")
+            self.root.after(110, lambda: btn.config(relief="raised"))
+            self.root.after(240, lambda: (btn.config(relief="flat",
+                                                     background=obg), then()))
+        except Exception:
+            then()
 
     def _on_tab_changed(self, _evt):
         try:
@@ -238,6 +269,14 @@ class App:
                                      fg="#2e7d32")
             self.train_next.config(state="normal", bg=ACCENT)
             self.rec_view.set_preloaded(self.model, self.model_label)
+            # 학습 탭에 있을 때만: '다음' 버튼 눌리는 애니메이션 후 인식 탭으로
+            try:
+                current = self.nb.nametowidget(self.nb.select())
+            except Exception:
+                current = None
+            if current is self.tab_train:
+                self.root.after(700, lambda: self._animate_press(
+                    self.train_next, lambda: self.nb.select(self.rec_view)))
         else:
             self.model_status.config(text=f"✗ 모델 로드 실패: {info}", fg="#c62828")
 
