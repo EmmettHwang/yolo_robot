@@ -122,7 +122,7 @@ class ActionEditor(ttk.Frame):
         # 헤더
         head = tk.Frame(self); head.pack(fill="x", padx=12)
         for txt, w in (("객체", 18), ("모션", 28), ("사운드", 11),
-                       ("값(mp3 / 읽을 말)", 30), ("지속(초)", 7), ("", 4)):
+                       ("값(mp3 / 읽을 말) · 지속(초)", 42)):
             tk.Label(head, text=txt, width=w, anchor="w",
                      font=("Malgun Gothic", 9, "bold")).pack(side="left")
 
@@ -262,11 +262,16 @@ class ActionEditor(ttk.Frame):
         row["val_holder"].pack(side="left", padx=(4, 0))
         row["val_var"] = tk.StringVar(value=act.get("sound_value", ""))
 
-        # 지속시간(초) — 비우면 mp3 길이만큼
+        # 지속시간(초) — 비우면 mp3 길이만큼. 라벨을 인라인으로 붙여 항상 정렬
         dur = act.get("duration")
         dv = tk.StringVar(value=(str(dur) if dur else ""))
-        de = tk.Entry(fr, textvariable=dv, width=6)
-        de.pack(side="left", padx=(4, 0))
+        durwrap = tk.Frame(fr); durwrap.pack(side="left", padx=(8, 0))
+        tk.Label(durwrap, text="지속", font=("Malgun Gothic", 9),
+                 fg="#666").pack(side="left")
+        de = tk.Entry(durwrap, textvariable=dv, width=5)
+        de.pack(side="left", padx=(2, 1))
+        tk.Label(durwrap, text="초", font=("Malgun Gothic", 9),
+                 fg="#666").pack(side="left")
         de.bind("<FocusOut>", lambda e: self._autosave())
         row["dur_var"] = dv
 
