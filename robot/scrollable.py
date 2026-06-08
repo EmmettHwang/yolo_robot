@@ -13,8 +13,24 @@ scrollable.py
     ttk.Label(body, text="...").pack()
 """
 
+import os
 import tkinter as tk
 from tkinter import ttk
+
+
+def env_center():
+    """별도 프로세스 창이 부모(메인 윈도) 중앙에 뜨도록 전달된 중심 좌표.
+
+    앱이 서브프로세스를 띄울 때 ROBO_CENTER="cx,cy" 환경변수로 넘긴다.
+    """
+    v = os.environ.get("ROBO_CENTER")
+    if not v:
+        return None
+    try:
+        cx, cy = (int(x) for x in v.split(","))
+        return cx, cy
+    except Exception:
+        return None
 
 
 def fit_window(win, width, height, margin=90, center=True, parent=None):
@@ -31,8 +47,8 @@ def fit_window(win, width, height, margin=90, center=True, parent=None):
     h = min(height, sh - margin)
     if center:
         # 기본: 화면 중앙
-        x = max(0, (sw - w) // 2)
-        y = max(0, (sh - h) // 2 - 10)
+        x = (sw - w) // 2
+        y = (sh - h) // 2 - 10
         # 부모가 있으면 부모(메인 윈도) 중앙으로
         if parent is not None:
             try:
@@ -44,10 +60,13 @@ def fit_window(win, width, height, margin=90, center=True, parent=None):
                     y = py + (ph - h) // 2
             except Exception:
                 pass
-        # 화면 밖으로 나가지 않게 보정
-        x = max(0, min(x, sw - w))
-        y = max(0, min(y, sh - h))
-        win.geometry(f"{w}x{h}+{x}+{y}")
+        else:
+            # 부모가 없으면(별도 프로세스) 전달된 메인 중심 좌표 사용
+            ec = env_center()
+            if ec:
+                x = ec[0] - w // 2
+                y = ec[1] - h // 2
+        win.geometry(f"{w}x{h}+{int(x)}+{int(y)}")
     else:
         win.geometry(f"{w}x{h}")
     return w, h

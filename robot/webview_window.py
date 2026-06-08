@@ -8,6 +8,7 @@ webview_window.py
 사용:  python webview_window.py [URL] [제목]
 """
 
+import os
 import sys
 
 
@@ -22,7 +23,19 @@ def main():
         import webbrowser
         webbrowser.open(url)
         return
-    webview.create_window(title, url, width=1100, height=800)
+    w, h = 1100, 800
+    x = y = None
+    ec = os.environ.get("ROBO_CENTER")
+    if ec:                                   # 메인 윈도 중앙(전달된 좌표)
+        try:
+            cx, cy = (int(v) for v in ec.split(","))
+            x, y = cx - w // 2, cy - h // 2
+        except Exception:
+            x = y = None
+    if x is not None:
+        webview.create_window(title, url, width=w, height=h, x=x, y=y)
+    else:
+        webview.create_window(title, url, width=w, height=h)
     webview.start()
 
 

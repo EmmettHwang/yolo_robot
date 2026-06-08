@@ -143,7 +143,8 @@ class App:
             pass
         self._train_before_mtime = self._get_active_mtime()
         self._train_proc = subprocess.Popen(
-            [PY, os.path.join(ROBOT_DIR, "trainer.py")], cwd=BASE)
+            [PY, os.path.join(ROBOT_DIR, "trainer.py")], cwd=BASE,
+            env=self._child_env())
         self._show_wait_dialog(
             title="로봇 학습 진행 중",
             heading="🧠  로봇 학습 스튜디오",
@@ -163,13 +164,26 @@ class App:
                                      fg="#ef6c00")
             self._reload_model()
 
+    def _child_env(self):
+        """서브프로세스 창이 메인 윈도 중앙에 뜨도록 중심 좌표를 환경변수로 전달."""
+        env = os.environ.copy()
+        try:
+            self.root.update_idletasks()
+            cx = self.root.winfo_rootx() + self.root.winfo_width() // 2
+            cy = self.root.winfo_rooty() + self.root.winfo_height() // 2
+            env["ROBO_CENTER"] = f"{cx},{cy}"
+        except Exception:
+            pass
+        return env
+
     def _open_webview(self):
         """로고 클릭 → kdt2025.com 을 웹뷰(별도 프로세스)로 열고 메인 윈도 잠금."""
         if self._web_proc is not None and self._web_proc.poll() is None:
             return
         self._web_proc = subprocess.Popen(
             [PY, os.path.join(ROBOT_DIR, "webview_window.py"),
-             "https://kdt2025.com", "KDT 2025"], cwd=BASE)
+             "https://kdt2025.com", "KDT 2025"], cwd=BASE,
+            env=self._child_env())
         self._show_wait_dialog(
             title="웹 페이지 보기",
             heading="🌐  KDT 2025  (kdt2025.com)",
@@ -337,7 +351,8 @@ class App:
         self.dev_status.config(text="🔧 장치 설정창에서 포트·카메라·마이크를 테스트하세요...",
                                fg="#ef6c00")
         self._dev_proc = subprocess.Popen(
-            [PY, os.path.join(ROBOT_DIR, "port_selector.py")], cwd=BASE)
+            [PY, os.path.join(ROBOT_DIR, "port_selector.py")], cwd=BASE,
+            env=self._child_env())
         self._show_wait_dialog()        # 메인 윈도 잠금 + 안내
         self._watch_device_proc()
 

@@ -377,9 +377,18 @@ class PortSelector:
     # ============================================================
     def _center_window(self, window) -> None:
         ws, hs = window.winfo_screenwidth(), window.winfo_screenheight()
-        x = int((ws - self.width) / 2)
-        y = int((hs - self.height) / 2)
-        window.geometry(f"{self.width}x{self.height}+{x}+{y}")
+        try:
+            from scrollable import env_center
+            ec = env_center()
+        except Exception:
+            ec = None
+        if ec:                                   # 메인 윈도 중앙(전달된 좌표)
+            x = ec[0] - self.width // 2
+            y = ec[1] - self.height // 2
+        else:
+            x = int((ws - self.width) / 2)
+            y = int((hs - self.height) / 2)
+        window.geometry(f"{self.width}x{self.height}+{int(x)}+{int(y)}")
 
     def _build_root(self) -> None:
         self.root = tk.Tk()
