@@ -625,13 +625,9 @@ class PortSelector:
                          daemon=True).start()
 
     def _stop_led_test(self) -> None:
+        # 취소 신호만 보낸다. 포트를 여기서 닫으면 finally의 '모션 1 복귀'가
+        # 전송 실패하므로, 워커 루프가 스스로 끝내고 복귀/정리하도록 둔다.
         self._led_cancel.set()
-        r = self._motion_test_robot
-        if r is not None:
-            try:
-                r.close()
-            except Exception:
-                pass
 
     def _led_test_worker(self, port: str) -> None:
         cancel = self._led_cancel
@@ -709,6 +705,7 @@ class PortSelector:
                     pass
                 try:
                     robot.send_motion(1)        # 기본자세(1)로 복귀
+                    time.sleep(0.15)            # 닫기 전 패킷 전송 보장
                 except Exception:
                     pass
                 try:

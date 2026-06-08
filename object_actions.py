@@ -95,8 +95,11 @@ class ActionEditor(ttk.Frame):
         tk.Label(self, text="🎯 객체 반응 지정",
                  font=("Malgun Gothic", 14, "bold")).pack(pady=(10, 2))
         tk.Label(self, text="인식된 객체에 모션과 사운드를 지정합니다. "
-                 "(객체·모션은 중복 없이 선택)",
+                 "(객체·모션은 중복 없이 선택 · 지속시간 비우면 mp3 길이)",
                  font=("Malgun Gothic", 9), fg="#666").pack()
+        # 동작 종료 자동 감지는 프로토콜상 불가 → 비활성 표시(시간 기반 사용)
+        tk.Checkbutton(self, text="로봇 동작 종료 자동 감지 (미지원 — 시간 기반 사용)",
+                       state="disabled", font=("Malgun Gothic", 9)).pack()
 
         # 추가 줄 (검색 + 드롭다운)
         add = tk.Frame(self); add.pack(fill="x", padx=12, pady=8)
@@ -118,8 +121,8 @@ class ActionEditor(ttk.Frame):
 
         # 헤더
         head = tk.Frame(self); head.pack(fill="x", padx=12)
-        for txt, w in (("객체", 18), ("모션", 30), ("사운드", 12),
-                       ("값(mp3 선택 / 읽을 말)", 34), ("", 6)):
+        for txt, w in (("객체", 18), ("모션", 28), ("사운드", 11),
+                       ("값(mp3 / 읽을 말)", 30), ("지속(초)", 7), ("", 4)):
             tk.Label(head, text=txt, width=w, anchor="w",
                      font=("Malgun Gothic", 9, "bold")).pack(side="left")
 
@@ -259,6 +262,14 @@ class ActionEditor(ttk.Frame):
         row["val_holder"].pack(side="left", padx=(4, 0))
         row["val_var"] = tk.StringVar(value=act.get("sound_value", ""))
 
+        # 지속시간(초) — 비우면 mp3 길이만큼
+        dur = act.get("duration")
+        dv = tk.StringVar(value=(str(dur) if dur else ""))
+        de = tk.Entry(fr, textvariable=dv, width=6)
+        de.pack(side="left", padx=(4, 0))
+        de.bind("<FocusOut>", lambda e: self._autosave())
+        row["dur_var"] = dv
+
         tk.Button(fr, text="✕", width=2, cursor="hand2",
                   command=lambda r=row: self._del_row(r)).pack(side="left",
                                                                padx=(4, 0))
@@ -316,6 +327,16 @@ class ActionEditor(ttk.Frame):
             entry = {"sound_kind": kind, "sound_value": val}
             if motion is not None:
                 entry["motion"] = motion
+            dv = r.get("dur_var")
+            if dv is not None:
+                t = dv.get().strip()
+                if t:
+                    try:
+                        d = float(t)
+                        if d > 0:
+                            entry["duration"] = d
+                    except Exception:
+                        pass
             result[r["obj"]] = entry
         return result
 

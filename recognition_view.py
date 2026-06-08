@@ -72,6 +72,7 @@ class RecognitionView(ttk.Frame):
 
         self.yolo_on = True
         self.sound_on = True
+        self.auto_start = tk.BooleanVar(master=self, value=True)  # 탭 열면 자동 시작
         self.running = False
         self._lock = threading.Lock()
         self._frame = None
@@ -96,8 +97,9 @@ class RecognitionView(ttk.Frame):
                                 highlightthickness=0, cursor="hand2")
         self.canvas.pack(fill="both", expand=True, padx=6, pady=6)
         self.img_id = self.canvas.create_image(320, 200, anchor="center")
-        self.canvas.create_text(320, 200, text="잠시 후 자동으로 시작됩니다...",
-                                fill="#888", font=("Malgun Gothic", 13),
+        self.canvas.create_text(320, 200,
+                                text="‘연결 & 시작’을 누르세요 (자동 시작은 우측 체크박스)",
+                                fill="#888", font=("Malgun Gothic", 12),
                                 tags="hint")
 
         # 하단 패널
@@ -129,6 +131,8 @@ class RecognitionView(ttk.Frame):
                   command=self._open_control_panel).pack(side="left", padx=(8, 0))
         ttk.Button(ctrl, text="↻ 매핑 새로고침", cursor="hand2",
                    command=self._reload_mapping).pack(side="left", padx=(8, 0))
+        tk.Checkbutton(ctrl, text="자동 시작", variable=self.auto_start,
+                       font=("Malgun Gothic", 9)).pack(side="left", padx=(8, 0))
 
         # --- 본문: 조이스틱 | 디스플레이 | 그리드 ---
         body = tk.Frame(panel); body.pack(fill="x", padx=8, pady=(0, 8))
@@ -176,12 +180,15 @@ class RecognitionView(ttk.Frame):
             self.start()
 
     def start(self):
+        if self.running:                 # 재진입 방지(딜레이/워커 중복 누적 차단)
+            return
         port, cam = _read_config()
         if not port:
             messagebox.showwarning(
                 "알림", "포트가 설정되지 않았습니다.\n'포트/장치 설정' 탭에서 먼저 선택하세요.")
             return
-        # 다른 곳/이전 세션이 포트를 안 닫았을 수 있으니 먼저 정리(close)
+        # 직전 워커/렌더 루프가 남아있으면 확실히 정리
+        self.stop()
         self._cleanup()
         # 포트가 직전에 닫혀 OS가 늦게 풀어줄 수 있어 몇 번 재시도(close→open)
         self.robot = None
@@ -282,10 +289,16 @@ class RecognitionView(ttk.Frame):
     # 워커 (카메라 + 추론 + 트리거)
     # ============================================================
     def _loop(self):
-        while not self._stop_flag.is_set():
-            ok, frame = self.cap.read()
+        stop = self._stop_flag          # 이 워커 전용 핸들(재시작 시 재할당돼도 안전)
+        cap = self.cap
+        while not stop.is_set():
+            try:
+                ok, frame = cap.read()
+            except Exception:
+                break
             if not ok or frame is None:
-                time.sleep(0.03)
+                if stop.wait(0.03):
+                    break
                 continue
             self._fcount += 1
 
@@ -328,9 +341,11 @@ class RecognitionView(ttk.Frame):
                 # 사운드
                 if self.sound_on and kind and kind != snd.NONE:
                     self.player.play(kind, val)
-                # mp3면 그 길이만큼 동작 지속 (중지 전까지 안 끊음)
-                hold = None
-                if kind == snd.MP3 and val:
+                # 지속시간: 지정값(초) > mp3 길이 > 기본
+                hold = act.get("duration")
+                if hold:
+                    hold = float(hold)
+                elif kind == snd.MP3 and val:
                     try:
                         import mp3_library
                         d = mp3_library.read_meta(val).get("duration", 0)

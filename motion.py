@@ -98,12 +98,13 @@ class MotionRunner:
             self.send_once(READY_MOTION)
 
     def stop_all(self) -> None:
-        """진행 중인 동작을 멈추고 Ready 자세로 복귀(페이드인 LED 쇼와 함께)."""
+        """진행 중인 동작을 멈추고 즉시 모션 1(Ready)로. 이어서 페이드인 LED 쇼."""
         self._cancel_action.set()           # 진행 중인 LED 반응 즉시 종료
         with self._lock:
             self._seq = None
             self._oneshots.clear()
-        self._enqueue(("ready_led", None))  # Ready 복귀 + LED 연출
+        self.send_once(READY_MOTION)        # ★ 즉시 1번 모션 전송
+        self._enqueue(("ready_led", None))  # 복귀 LED 연출
 
     def forward(self) -> None:
         self.start_sequence(FORWARD_SEQUENCE)
@@ -210,7 +211,7 @@ class MotionRunner:
         STEP = 8
         try:
             if self.robot:
-                self.robot.send_motion(READY_MOTION)     # 1 = 기본자세
+                self.robot.send_motion(READY_MOTION)     # 1 = 기본자세(재확인)
             # 페이드 인 (복귀 연출)
             for k in range(1, STEP + 1):
                 f = k / STEP

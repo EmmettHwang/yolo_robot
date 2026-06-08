@@ -85,6 +85,9 @@ class App:
         self._dev_proc = None
         self._prev_tab = None
         self._wait_dlg = None
+        # 자동 진행 옵션 (체크박스)
+        self.auto_dev = tk.BooleanVar(value=True)    # 설정 후 자동 이동
+        self.auto_yolo = tk.BooleanVar(value=False)  # 모델 준비 후 자동 이동
 
         self._header()
 
@@ -167,6 +170,9 @@ class App:
             bg=ACCENT, fg="white", relief="flat", cursor="hand2", height=2,
             width=18, command=lambda: self.nb.select(self.tab_train))
         self.dev_next.pack(side="left", padx=6)
+        tk.Checkbutton(f, text="설정 창 닫으면 3초 후 자동으로 다음 단계로",
+                       variable=self.auto_dev, bg=BG,
+                       font=("Malgun Gothic", 9)).pack(pady=(8, 0))
         return f
 
     # ---------- 탭: 로봇 학습 ----------
@@ -213,6 +219,9 @@ class App:
             command=lambda: self.nb.select(self.rec_view))
         self.train_next.pack(side="left", padx=6)
 
+        tk.Checkbutton(f, text="모델 준비되면 자동으로 인식 시작 단계로 이동",
+                       variable=self.auto_yolo, bg=BG,
+                       font=("Malgun Gothic", 9)).pack(pady=(6, 0))
         tk.Label(f, text="※ 학습은 CPU라 느립니다. 클래스당 20~50장, 에폭 10~30 권장.",
                  font=("Malgun Gothic", 9), fg="#999", bg=BG).pack(pady=(8, 0))
         return f
@@ -298,12 +307,20 @@ class App:
         if self._dev_proc is not None and self._dev_proc.poll() is None:
             self.root.after(500, self._watch_device_proc)
             return
-        # 설정창이 닫힘 → 잠금 해제, 재검증, 정상이면 버튼 애니메이션 후 다음 탭
+        # 설정창이 닫힘 → 잠금 해제, 재검증
         self._hide_wait_dialog()
         if self._check_devices():
-            self.root.after(
-                500, lambda: self._animate_press(
-                    self.dev_next, lambda: self.nb.select(self.tab_train)))
+            if self.auto_dev.get():
+                self.dev_status.config(
+                    text=self.dev_status.cget("text") + "  ·  3초 후 자동 이동",
+                    fg="#2e7d32")
+                self.root.after(
+                    3000, lambda: self._animate_press(
+                        self.dev_next, lambda: self.nb.select(self.tab_train)))
+            else:
+                self.dev_status.config(
+                    text=self.dev_status.cget("text")
+                    + "  ·  ‘다음 → 로봇 학습’을 누르세요", fg="#2e7d32")
 
     def _animate_press(self, btn, then):
         """버튼이 '눌리는' 애니메이션 후 then() 실행."""
@@ -332,8 +349,9 @@ class App:
         if current is self.tab_train:
             self._load_model_async()
         elif current is self.rec_view:
-            # 인식 탭에 오면 포트를 새로 열고 자동 시작 (버튼 안 눌러도 됨)
-            if not self.rec_view.running:
+            # 인식 탭에 오면 자동 시작 (체크박스로 on/off)
+            if (not self.rec_view.running
+                    and self.rec_view.auto_start.get()):
                 self.root.after(250, self.rec_view.start)
 
     def _load_model_async(self):
@@ -415,7 +433,7 @@ class App:
             current = self.nb.nametowidget(self.nb.select())
         except Exception:
             current = None
-        if current is self.tab_train:
+        if current is self.tab_train and self.auto_yolo.get():
             self.root.after(700, lambda: self._animate_press(
                 self.train_next, lambda: self.nb.select(self.rec_view)))
 
