@@ -87,7 +87,8 @@ class App:
         self._dev_proc = None
         self._prev_tab = None
         self._wait_dlg = None
-        self._active_mtime = self._get_active_mtime()
+        self._train_proc = None
+        self._train_before_mtime = 0
         # 자동 진행 옵션 (체크박스)
         self.auto_dev = tk.BooleanVar(value=True)    # 설정 후 자동 이동
         self.auto_yolo = tk.BooleanVar(value=False)  # 모델 준비 후 자동 이동
@@ -108,7 +109,6 @@ class App:
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(400, self._start_flow)        # 시퀀스 시작
-        self.root.after(2500, self._watch_active_model)  # 모델 변경 감지
 
     def _get_active_mtime(self):
         try:
@@ -117,18 +117,24 @@ class App:
         except Exception:
             return 0
 
-    def _watch_active_model(self):
-        """active.pt 가 바뀌면(학습/교체) 자동으로 모델 재로드."""
-        m = self._get_active_mtime()
-        if (m != self._active_mtime and self._model_loaded
-                and not self._model_loading):
-            self._active_mtime = m
+    def _open_training(self):
+        """로봇 학습 창(트레이너)을 별도 프로세스로 열고, 닫히면(뒤로) 모델 변경 시 재로드."""
+        if self._train_proc is not None and self._train_proc.poll() is None:
+            return
+        self._train_before_mtime = self._get_active_mtime()
+        self._train_proc = subprocess.Popen(
+            [PY, os.path.join(ROBOT_DIR, "trainer.py")], cwd=BASE)
+        self._watch_train_proc()
+
+    def _watch_train_proc(self):
+        if self._train_proc is not None and self._train_proc.poll() is None:
+            self.root.after(700, self._watch_train_proc)
+            return
+        # 트레이너가 닫힘(뒤로) → active 모델이 바뀌었으면 다시 로드
+        if self._get_active_mtime() != self._train_before_mtime:
             self.model_status.config(text="🔄 모델 변경 감지 — 다시 로드합니다...",
                                      fg="#ef6c00")
             self._reload_model()
-        else:
-            self._active_mtime = m
-        self.root.after(2500, self._watch_active_model)
 
     def _style(self):
         st = ttk.Style()
@@ -233,11 +239,7 @@ class App:
         tk.Button(btns, text="🧠 학습하기 (수집/학습/교체)",
                   font=("Malgun Gothic", 11, "bold"), bg="#6a1b9a", fg="white",
                   relief="flat", cursor="hand2", height=2, width=24,
-                  command=lambda: _launch("trainer.py")).pack(side="left",
-                                                              padx=6)
-        tk.Button(btns, text="🔄 모델 다시 로드", font=("Malgun Gothic", 10),
-                  cursor="hand2", height=2, width=14,
-                  command=self._reload_model).pack(side="left", padx=6)
+                  command=self._open_training).pack(side="left", padx=6)
         self.train_next = tk.Button(
             btns, text="다음 → 인식 시작 ▶", font=("Malgun Gothic", 11, "bold"),
             bg="#9e9e9e", fg="white", relief="flat", height=2, width=18,
@@ -366,6 +368,12 @@ class App:
             return
         # 인식은 탭을 벗어나도 백그라운드에서 계속 돈다(중지하지 않음).
         # 포트가 필요한 '장치 설정 열기' 때만 별도로 stop() 한다.
+        # 객체 반응 탭을 벗어나면 인식의 매핑을 자동 새로고침
+        if self._prev_tab is self.tab_act and current is not self.tab_act:
+            try:
+                self.rec_view.reload_mapping()
+            except Exception:
+                pass
         self._prev_tab = current
 
         if current is self.tab_train:

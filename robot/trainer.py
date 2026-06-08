@@ -647,12 +647,16 @@ class ModelManager:
 
     def _dl_worker(self, name):
         fn = name + ".pt"
+        dst = os.path.join(MODELS_DIR, fn)
         try:
-            from ultralytics import YOLO
-            YOLO(fn)                       # 없으면 다운로드
             os.makedirs(MODELS_DIR, exist_ok=True)
-            dst = os.path.join(MODELS_DIR, fn)
-            if not os.path.exists(dst):
+            if os.path.exists(dst):
+                # 이미 model/ 에 있으면 다운로드하지 않고 바로 적용
+                self._ui(lambda: self.status.config(
+                    text=f"이미 있음 → 적용: {fn}", fg="#1565c0"))
+            else:
+                from ultralytics import YOLO
+                YOLO(fn)                   # 없을 때만 다운로드
                 for d in (BASE, os.getcwd(), MODELS_DIR):
                     c = os.path.join(d, fn)
                     if os.path.exists(c):

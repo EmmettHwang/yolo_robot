@@ -105,8 +105,8 @@ class MotionRunner:
         with self._lock:
             self._seq = None
             self._oneshots.clear()
-        self.send_once(READY_MOTION)        # ★ 즉시 1번 모션 전송
-        self._enqueue(("ready_led", None))  # 복귀 LED 연출
+        self.send_once(0)                   # ★ 모션 0 = 현재 동작 중단(halt)
+        self._enqueue(("ready_led", None))  # 그 다음 기본자세(1) + 복귀 LED
 
     def forward(self) -> None:
         self.start_sequence(FORWARD_SEQUENCE)
@@ -290,13 +290,23 @@ class MotionRunner:
             self._wait(0.12)
             if self.effects_on:
                 sound.player.play_effect(sound.FX_END)
-            if self.robot:
-                self.robot.send_motion(READY_MOTION)   # 동작 종료 → 기본자세 복귀
         finally:
-            # 끝/중지 시 LED 끄기
+            cancelled = self._cancel_action.is_set()
+            # 중지면 LED 끄기(BT 지연 가능)보다 먼저 모션 0(halt)을 즉시 전송
+            if cancelled and self.robot:
+                try:
+                    self.robot.send_motion(0)
+                except Exception:
+                    pass
             try:
                 if self.robot:
                     self.robot.send_leds([(i, 0, 0, 0) for i in ids])
+            except Exception:
+                pass
+            try:
+                # 정상 종료는 기본자세(1)로. 중지는 stop_all 의 ready_led 가 1 처리.
+                if self.robot and not cancelled:
+                    self.robot.send_motion(READY_MOTION)
             except Exception:
                 pass
             self._busy = False

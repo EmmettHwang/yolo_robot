@@ -16,13 +16,48 @@ import shutil
 import numpy as np
 from ultralytics import YOLO
 
-from paths import ACTIVE_MODEL, BASE_WEIGHTS, MODELS_DIR, get_active_name
+from paths import (ACTIVE_MODEL, BASE_WEIGHTS, MODELS_DIR,
+                   get_active_name, set_active_name)
+
+
+def _match_active_name():
+    """active.pt 와 내용이 같은 model/*.pt 를 찾아 그 이름을 반환(원본명 추정)."""
+    import hashlib
+    try:
+        asz = os.path.getsize(ACTIVE_MODEL)
+        with open(ACTIVE_MODEL, "rb") as f:
+            ah = hashlib.md5(f.read()).hexdigest()
+        for fn in os.listdir(MODELS_DIR):
+            if fn.lower().endswith(".pt") and fn != "active.pt":
+                fp = os.path.join(MODELS_DIR, fn)
+                try:
+                    if os.path.getsize(fp) != asz:
+                        continue
+                    with open(fp, "rb") as f:
+                        if hashlib.md5(f.read()).hexdigest() == ah:
+                            return fn
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return None
+
+
+def _active_label():
+    name = get_active_name()
+    if name:
+        return name
+    guess = _match_active_name()
+    if guess:
+        set_active_name(guess)        # 다음부터 빠르게
+        return guess
+    return "사용자 모델"
 
 
 def load_model():
     """(model, label) 반환. label은 화면 표시용(실제 모델 이름)."""
     if os.path.exists(ACTIVE_MODEL):
-        return YOLO(ACTIVE_MODEL), (get_active_name() or "active.pt")
+        return YOLO(ACTIVE_MODEL), _active_label()
     if os.path.exists(BASE_WEIGHTS):
         return YOLO(BASE_WEIGHTS), "기본 yolov5s"
     # 없으면 다운로드 후 model/ 폴더로 복사

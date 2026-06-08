@@ -11,6 +11,8 @@ recognition_view.py
 - 로봇 연결 끊김 감지 → 알림 후 정지.
 """
 
+import os
+import json
 import time
 import threading
 import configparser
@@ -26,7 +28,7 @@ import yolo as yolo_mod
 import sound as snd
 import object_actions
 from motion_table import coco_kr
-from paths import CONFIG_INI
+from paths import CONFIG_INI, DATA_DIR
 from robot_controller import HumanoidRobot
 from motion import MotionRunner
 from motion_table import FORWARD_SEQUENCE, BACKWARD_SEQUENCE
@@ -42,6 +44,26 @@ DIR_SEQ = {
     "N": FORWARD_SEQUENCE, "S": BACKWARD_SEQUENCE,
     "W": [5], "E": [6], "NW": [12], "NE": [13], "SW": [7], "SE": [8],
 }
+
+
+REC_SETTINGS = os.path.join(DATA_DIR, "rec_settings.json")
+
+
+def _load_rec_settings():
+    try:
+        with open(REC_SETTINGS, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_rec_settings(conf, max_det):
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(REC_SETTINGS, "w", encoding="utf-8") as f:
+            json.dump({"conf": conf, "max_det": max_det}, f)
+    except Exception:
+        pass
 
 
 def _clock(ts):
@@ -81,8 +103,9 @@ class RecognitionView(ttk.Frame):
 
         self.yolo_on = True
         self.sound_on = True
-        self.conf_threshold = CONF_THRESHOLD     # 이 값 미만은 표시/트리거 안 함
-        self.max_det = 10                        # 최대 인식 개수
+        _s = _load_rec_settings()                # 저장된 신뢰도/개수 복원
+        self.conf_threshold = float(_s.get("conf", CONF_THRESHOLD))
+        self.max_det = int(_s.get("max_det", 10))
         self.auto_start = tk.BooleanVar(master=self, value=True)  # 탭 열면 자동 시작
         self.running = False
         self._lock = threading.Lock()
@@ -163,6 +186,7 @@ class RecognitionView(ttk.Frame):
         def _on_conf(v):
             self.conf_threshold = float(v)
             self._conf_lbl.config(text=f"{self.conf_threshold:.2f}")
+            _save_rec_settings(self.conf_threshold, self.max_det)
         tk.Scale(ctrl2, from_=0.10, to=0.95, resolution=0.05,
                  orient="horizontal", variable=self._conf_var, showvalue=False,
                  length=240, width=26, sliderlength=34,
@@ -539,8 +563,12 @@ class RecognitionView(ttk.Frame):
         if self.runner:
             self.runner.effects_on = self.sound_on
 
-    def _reload_mapping(self):
+    def reload_mapping(self):
+        """객체 반응 매핑을 조용히 다시 불러온다(자동 호출용)."""
         self.mapping = object_actions.load_actions()
+
+    def _reload_mapping(self):
+        self.reload_mapping()
         messagebox.showinfo("새로고침", "객체 반응 매핑을 다시 불러왔습니다.")
 
     def _on_joystick(self, direction):
