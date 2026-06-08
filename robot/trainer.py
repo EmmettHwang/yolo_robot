@@ -2,20 +2,13 @@
 """
 trainer.py
 ==========
-로봇 학습: 데이터 수집 / 학습 / 모델 교체.
+로봇 학습 스튜디오 — 하나의 창에서 탭으로 순차 진행 (Teachable Machine 스타일).
 
-데이터 수집:
-  - 실시간 카메라, 클래스 추가/삭제, 단발/연속 캡처
-  - 저장 크기 선택(144/200/320/640, 정사각 리사이즈)
-  - 수집된 데이터 썸네일 미리보기
-  - 1이미지=1객체 가정 → 라벨은 전체 프레임 박스 자동 생성
+  ① 데이터 수집 : 실시간 카메라, 클래스 추가/삭제, 단발/연속 캡처, 썸네일
+  ② 학습        : ultralytics 로 학습(서브프로세스), 로그 스트리밍
+  ③ 모델 적용   : best.pt 저장 / 기본 모델 다운로드 / 폴더에서 선택 → active 적용
 
-학습:
-  - yolov5/train.py 서브프로세스, 가중치=model/yolov5s.pt
-  - 완료 후 best.pt 를 이름 지정해 ./model 폴더에 저장(+선택 시 active 적용)
-
-모델 교체:
-  - ./model 의 .pt 중 하나를 골라 active.pt 로 설정
+상단에 ①→②→③ 스텝 인디케이터를 두어 진행 단계를 한눈에 보여준다.
 """
 
 import os
@@ -51,6 +44,19 @@ PY = sys.executable
 _FONT = ("Malgun Gothic", 11)
 _FONT_BIG = ("Malgun Gothic", 13, "bold")
 SIZES = [144, 200, 320, 640]
+
+# 색상 테마
+BG = "#f4f6fb"
+HEADER_BG = "#1f2a44"
+ACCENT = "#1565c0"
+GREEN = "#28a745"
+ORANGE = "#ef6c00"
+
+# 다운로드 가능한 기본 모델 (ultralytics)
+DOWNLOADABLE = [
+    "yolov5su", "yolov8n", "yolov8s", "yolov8m", "yolov8l",
+    "yolo11n", "yolo11s", "yolo11m", "yolo11l",
+]
 
 
 # ============================================================
@@ -176,62 +182,66 @@ def build_data_yaml() -> str:
 
 
 # ============================================================
-# 1) 데이터 수집
+# 탭 1) 데이터 수집
 # ============================================================
-class DataCollector:
+class CollectTab(ttk.Frame):
     PREVIEW_W = 420
     PREVIEW_H = 320
     THUMB = 72
 
-    def __init__(self):
+    def __init__(self, master, studio):
+        super().__init__(master)
+        self.studio = studio
         self.classes = load_classes()
         self.cap = None
         self.last_frame = None
         self.after_id = None
         self.cont_after = None
         self.continuous = False
-        self.root = None
         self._thumbs = []
+        self._build()
 
-    def run(self):
+    def _build(self):
         if not (_HAS_CV2 and _HAS_PIL):
-            messagebox.showerror("오류", "opencv(cv2) / Pillow(PIL) 가 필요합니다.")
+            tk.Label(self, text="opencv(cv2) / Pillow(PIL) 가 필요합니다.",
+                     font=_FONT, fg="#c62828").pack(pady=40)
             return
-        self.root = tk.Tk()
-        self.root.title("데이터 수집")
-        self.root.protocol("WM_DELETE_WINDOW", self._close)
 
-        tk.Label(self.root, text="데이터 수집", font=_FONT_BIG, pady=6).pack()
+        tk.Label(self, text="촬영할 객체를 카메라에 비추고 캡처하세요. "
+                 "여러 클래스를 만들 수 있습니다.",
+                 font=("Malgun Gothic", 10), fg="#555", bg=BG).pack(
+            anchor="w", padx=14, pady=(10, 2))
 
         # 클래스 줄
-        crow = tk.Frame(self.root); crow.pack(fill="x", padx=12, pady=4)
-        tk.Label(crow, text="클래스", font=_FONT).pack(side="left")
+        crow = tk.Frame(self, bg=BG); crow.pack(fill="x", padx=14, pady=4)
+        tk.Label(crow, text="클래스", font=_FONT, bg=BG).pack(side="left")
         self.class_var = tk.StringVar()
         self.class_combo = ttk.Combobox(crow, textvariable=self.class_var,
                                         values=self.classes, width=20)
         self.class_combo.pack(side="left", padx=(6, 4))
         self.class_combo.bind("<<ComboboxSelected>>",
                               lambda e: self._refresh_thumbs())
-        tk.Button(crow, text="+ 추가", command=self._add_class).pack(side="left")
-        tk.Button(crow, text="🗑 삭제", command=self._delete_class).pack(
-            side="left", padx=(4, 0))
+        tk.Button(crow, text="+ 추가", cursor="hand2",
+                  command=self._add_class).pack(side="left")
+        tk.Button(crow, text="🗑 삭제", cursor="hand2",
+                  command=self._delete_class).pack(side="left", padx=(4, 0))
         if self.classes:
             self.class_combo.current(0)
 
         # 저장 크기 줄
-        srow = tk.Frame(self.root); srow.pack(fill="x", padx=12, pady=2)
-        tk.Label(srow, text="저장 크기", font=_FONT).pack(side="left")
+        srow = tk.Frame(self, bg=BG); srow.pack(fill="x", padx=14, pady=2)
+        tk.Label(srow, text="저장 크기", font=_FONT, bg=BG).pack(side="left")
         self.size_var = tk.IntVar(value=320)
         for s in SIZES:
             tk.Radiobutton(srow, text=f"{s}", variable=self.size_var,
-                           value=s).pack(side="left")
+                           value=s, bg=BG).pack(side="left")
         tk.Label(srow, text="px (정사각)", font=("Malgun Gothic", 9),
-                 fg="#888").pack(side="left")
+                 fg="#888", bg=BG).pack(side="left")
 
-        body = tk.Frame(self.root); body.pack(fill="both", expand=True,
-                                              padx=12, pady=4)
+        body = tk.Frame(self, bg=BG)
+        body.pack(fill="both", expand=True, padx=14, pady=4)
         # 좌: 미리보기 + 캡처
-        left = tk.Frame(body); left.pack(side="left")
+        left = tk.Frame(body, bg=BG); left.pack(side="left")
         self.canvas = tk.Canvas(left, width=self.PREVIEW_W,
                                 height=self.PREVIEW_H, bg="#1e1e1e",
                                 highlightthickness=1, highlightbackground="#555")
@@ -239,22 +249,24 @@ class DataCollector:
         self.img_id = self.canvas.create_image(self.PREVIEW_W // 2,
                                                self.PREVIEW_H // 2,
                                                anchor="center")
-        brow = tk.Frame(left); brow.pack(pady=6)
-        tk.Button(brow, text="📸 캡처", font=_FONT_BIG, bg="#28a745",
-                  fg="white", relief="flat", padx=12,
+        brow = tk.Frame(left, bg=BG); brow.pack(pady=6)
+        tk.Button(brow, text="📸 캡처", font=_FONT_BIG, bg=GREEN,
+                  fg="white", relief="flat", padx=12, cursor="hand2",
                   command=self._capture_once).pack(side="left", padx=4)
         self.cont_btn = tk.Button(brow, text="● 연속 캡처", font=_FONT_BIG,
-                                  bg="#1565c0", fg="white", relief="flat",
-                                  padx=12, command=self._toggle_continuous)
+                                  bg=ACCENT, fg="white", relief="flat",
+                                  padx=12, cursor="hand2",
+                                  command=self._toggle_continuous)
         self.cont_btn.pack(side="left", padx=4)
-        self.count_label = tk.Label(left, text="", font=_FONT, fg="#1565c0")
+        self.count_label = tk.Label(left, text="", font=_FONT, fg=ACCENT,
+                                    bg=BG)
         self.count_label.pack()
 
         # 우: 썸네일
-        right = tk.Frame(body); right.pack(side="left", fill="both",
-                                           expand=True, padx=(12, 0))
+        right = tk.Frame(body, bg=BG)
+        right.pack(side="left", fill="both", expand=True, padx=(12, 0))
         tk.Label(right, text="수집된 데이터 (선택 클래스)",
-                 font=("Malgun Gothic", 10, "bold")).pack(anchor="w")
+                 font=("Malgun Gothic", 10, "bold"), bg=BG).pack(anchor="w")
         tw = tk.Frame(right); tw.pack(fill="both", expand=True)
         self.thumb_canvas = tk.Canvas(tw, width=320, bg="#fafafa",
                                       highlightthickness=1,
@@ -270,17 +282,39 @@ class DataCollector:
         tsb.pack(side="right", fill="y")
         self.thumb_canvas.pack(side="left", fill="both", expand=True)
 
-        tk.Button(self.root, text="닫기", font=_FONT, width=10,
-                  command=self._close).pack(pady=(2, 10))
+        # 다음 단계
+        nav = tk.Frame(self, bg=BG); nav.pack(fill="x", padx=14, pady=(2, 10))
+        tk.Button(nav, text="다음: 학습 ▶", font=_FONT, bg=ACCENT, fg="white",
+                  relief="flat", cursor="hand2", padx=14,
+                  command=lambda: self.studio.goto("train")).pack(side="right")
 
+    # ---------- 카메라 ----------
+    def on_show(self):
+        if not (_HAS_CV2 and _HAS_PIL):
+            return
         self._open_cam()
         self._loop()
         self._update_count()
         self._refresh_thumbs()
-        self.root.mainloop()
 
-    # ---------- 카메라 ----------
+    def on_hide(self):
+        self._stop_continuous()
+        if self.after_id is not None:
+            try:
+                self.after_cancel(self.after_id)
+            except Exception:
+                pass
+            self.after_id = None
+        if self.cap is not None:
+            try:
+                self.cap.release()
+            except Exception:
+                pass
+            self.cap = None
+
     def _open_cam(self):
+        if self.cap is not None:
+            return
         backend = cv2.CAP_DSHOW if hasattr(cv2, "CAP_DSHOW") else 0
         self.cap = cv2.VideoCapture(camera_index(), backend)
 
@@ -293,8 +327,7 @@ class DataCollector:
                 rgb = cv2.resize(rgb, (self.PREVIEW_W, self.PREVIEW_H))
                 self.imgtk = ImageTk.PhotoImage(Image.fromarray(rgb))
                 self.canvas.itemconfig(self.img_id, image=self.imgtk)
-        if self.root is not None:
-            self.after_id = self.root.after(33, self._loop)
+            self.after_id = self.after(33, self._loop)
 
     # ---------- 클래스 ----------
     def _cur_class(self):
@@ -302,7 +335,7 @@ class DataCollector:
 
     def _add_class(self):
         name = simpledialog.askstring("클래스 추가", "새 클래스 이름:",
-                                      parent=self.root)
+                                      parent=self.winfo_toplevel())
         if not name:
             return
         name = name.strip()
@@ -358,19 +391,27 @@ class DataCollector:
             self.cont_btn.config(text="■ 연속 중지", bg="#c62828")
             self._continuous_step()
         else:
-            self.cont_btn.config(text="● 연속 캡처", bg="#1565c0")
-            if self.cont_after is not None:
-                try:
-                    self.root.after_cancel(self.cont_after)
-                except Exception:
-                    pass
-                self.cont_after = None
+            self._stop_continuous()
+
+    def _stop_continuous(self):
+        self.continuous = False
+        if self.cont_btn is not None:
+            try:
+                self.cont_btn.config(text="● 연속 캡처", bg=ACCENT)
+            except Exception:
+                pass
+        if self.cont_after is not None:
+            try:
+                self.after_cancel(self.cont_after)
+            except Exception:
+                pass
+            self.cont_after = None
 
     def _continuous_step(self):
         if not self.continuous:
             return
         self._capture_once()
-        self.cont_after = self.root.after(400, self._continuous_step)
+        self.cont_after = self.after(400, self._continuous_step)
 
     def _update_count(self):
         parts = [f"{c}:{count_images(c)}" for c in self.classes]
@@ -400,69 +441,49 @@ class DataCollector:
             lbl = tk.Label(self.thumb_inner, image=tk_im, bg="#fafafa")
             lbl.grid(row=i // cols, column=i % cols, padx=3, pady=3)
 
-    def _close(self):
-        self.continuous = False
-        for aid in (self.after_id, self.cont_after):
-            if aid is not None and self.root is not None:
-                try:
-                    self.root.after_cancel(aid)
-                except Exception:
-                    pass
-        self.after_id = self.cont_after = None
-        if self.cap is not None:
-            try:
-                self.cap.release()
-            except Exception:
-                pass
-            self.cap = None
-        if self.root is not None:
-            self.root.destroy()
-            self.root = None
-
 
 # ============================================================
-# 2) 학습
+# 탭 2) 학습
 # ============================================================
-class TrainWindow:
-    def __init__(self):
-        self.root = None
+class TrainTab(ttk.Frame):
+    def __init__(self, master, studio):
+        super().__init__(master)
+        self.studio = studio
         self.proc = None
+        self._build()
 
-    def run(self):
-        self.root = tk.Tk()
-        self.root.title("학습 시작")
-        self.root.protocol("WM_DELETE_WINDOW", self._close)
-        from scrollable import make_scrollable, fit_window
-        fit_window(self.root, 760, 640)
-        body = make_scrollable(self.root)
+    def _build(self):
+        tk.Label(self, text="수집한 데이터로 모델을 학습합니다. "
+                 "CPU 학습이라 느리니 에폭을 작게 두세요.",
+                 font=("Malgun Gothic", 10), fg="#555", bg=BG).pack(
+            anchor="w", padx=14, pady=(10, 2))
 
-        tk.Label(body, text="모델 학습", font=_FONT_BIG, pady=8).pack()
-        classes = load_classes()
-        total = sum(count_images(c) for c in classes)
-        tk.Label(body, text=f"클래스 {len(classes)}개 / 이미지 {total}장\n"
-                 "※ CPU 학습이라 느립니다. 에폭을 작게 두세요.",
-                 font=("Malgun Gothic", 9), fg="#555").pack()
+        self.info = tk.Label(self, text="", font=("Malgun Gothic", 10, "bold"),
+                             fg=ACCENT, bg=BG)
+        self.info.pack(anchor="w", padx=14)
 
-        row = tk.Frame(body); row.pack(pady=4)
-        tk.Label(row, text="에폭", font=_FONT).pack(side="left")
+        row = tk.Frame(self, bg=BG); row.pack(fill="x", padx=14, pady=6)
+        tk.Label(row, text="에폭", font=_FONT, bg=BG).pack(side="left")
         self.epoch_var = tk.StringVar(value="30")
         tk.Spinbox(row, from_=1, to=300, width=6,
                    textvariable=self.epoch_var).pack(side="left", padx=(6, 12))
-        tk.Label(row, text="이미지", font=_FONT).pack(side="left")
+        tk.Label(row, text="이미지", font=_FONT, bg=BG).pack(side="left")
         self.img_var = tk.StringVar(value="320")
         ttk.Combobox(row, textvariable=self.img_var, width=6, state="readonly",
                      values=[str(s) for s in SIZES]).pack(side="left", padx=6)
+        self.start_btn = tk.Button(row, text="▶ 학습 시작", font=_FONT_BIG,
+                                   bg=GREEN, fg="white", relief="flat",
+                                   padx=14, cursor="hand2", command=self._start)
+        self.start_btn.pack(side="left", padx=(12, 0))
 
-        self.start_btn = tk.Button(body, text="▶ 학습 시작",
-                                   font=_FONT_BIG, bg="#28a745", fg="white",
-                                   relief="flat", padx=14, command=self._start)
-        self.start_btn.pack(pady=8)
-        self.log = tk.Text(body, width=86, height=18, bg="#1e1e1e",
-                           fg="#d4d4d4", font=("Consolas", 9))
-        self.log.pack(padx=12, pady=(0, 6))
-        tk.Button(body, text="닫기", font=_FONT, width=10,
-                  command=self._close).pack(pady=(0, 10))
-        self.root.mainloop()
+        self.log = tk.Text(self, height=16, bg="#1e1e1e", fg="#d4d4d4",
+                           font=("Consolas", 9))
+        self.log.pack(fill="both", expand=True, padx=14, pady=(4, 6))
+
+    def on_show(self):
+        classes = load_classes()
+        total = sum(count_images(c) for c in classes)
+        self.info.config(text=f"클래스 {len(classes)}개 / 이미지 {total}장")
 
     def _append(self, text):
         def apply():
@@ -470,20 +491,20 @@ class TrainWindow:
                 self.log.insert("end", text); self.log.see("end")
             except Exception:
                 pass
-        if self.root is not None:
-            try:
-                self.root.after(0, apply)
-            except Exception:
-                pass
+        try:
+            self.after(0, apply)
+        except Exception:
+            pass
 
     def _start(self):
         classes = load_classes()
         total = sum(count_images(c) for c in classes)
         if not classes or total < 1:
-            messagebox.showwarning("알림", "먼저 데이터를 수집하세요.")
+            messagebox.showwarning("알림", "먼저 ① 데이터 수집에서 데이터를 모으세요.")
             return
         if not os.path.exists(BASE_WEIGHTS):
-            messagebox.showerror("오류", f"기본 가중치가 없습니다:\n{BASE_WEIGHTS}")
+            messagebox.showerror("오류", f"기본 가중치가 없습니다:\n{BASE_WEIGHTS}\n"
+                                 "③ 모델 적용에서 기본 모델을 먼저 다운로드하세요.")
             return
         self.start_btn.config(state="disabled")
         try:
@@ -495,7 +516,7 @@ class TrainWindow:
                          daemon=True).start()
 
     def _worker(self, epochs, imgsz):
-        # ultralytics 로 학습 (yolov5 클론 불필요). 로그 스트리밍 위해 서브프로세스로.
+        # ultralytics 로 학습. 로그 스트리밍 위해 서브프로세스로.
         code = (
             "from ultralytics import YOLO; "
             "m = YOLO(r'%s'); "
@@ -516,27 +537,24 @@ class TrainWindow:
             self.proc.wait()
             if self.proc.returncode == 0:
                 self._append(f"\n✓ 학습 완료. 결과: {BEST_WEIGHTS}\n")
-                if self.root is not None:
-                    self.root.after(0, self._prompt_save)
+                self.after(0, self._prompt_save)
             else:
                 self._append(f"\n✗ 학습 실패 (코드 {self.proc.returncode})\n")
         except Exception as e:
             self._append(f"\n✗ 오류: {e}\n")
         finally:
             self.proc = None
-            if self.root is not None:
-                try:
-                    self.root.after(
-                        0, lambda: self.start_btn.config(state="normal"))
-                except Exception:
-                    pass
+            try:
+                self.after(0, lambda: self.start_btn.config(state="normal"))
+            except Exception:
+                pass
 
     def _prompt_save(self):
         if os.path.exists(BEST_WEIGHTS):
             name = simpledialog.askstring(
                 "모델 저장",
                 "저장할 모델 이름 (./model 폴더, 취소=저장 안 함):",
-                parent=self.root)
+                parent=self.winfo_toplevel())
             if name:
                 name = name.strip()
                 if not name.endswith(".pt"):
@@ -550,95 +568,87 @@ class TrainWindow:
                             "이 모델을 인식에 바로 적용(active)할까요?"):
                         shutil.copy(dst, ACTIVE_MODEL)
                         set_active_name(name)        # 원본 이름 기록
-                    messagebox.showinfo("완료",
-                                        f"저장됨:\n{dst}\n학습 창을 닫습니다.")
+                    messagebox.showinfo(
+                        "완료", f"저장됨:\n{dst}\n③ 모델 적용 탭으로 이동합니다.")
                 except Exception as e:
                     messagebox.showerror("오류", f"저장 실패: {e}")
-        # 학습이 끝났으니 창을 닫고 메뉴로 복귀
-        try:
-            if self.root is not None:
-                self.root.destroy()
-                self.root = None
-        except Exception:
-            pass
+        # 학습이 끝났으니 ③ 모델 적용 단계로 이동
+        self.studio.goto("swap")
 
-    def _close(self):
+    def is_busy(self) -> bool:
+        return self.proc is not None
+
+    def stop(self):
         if self.proc is not None:
-            if not messagebox.askyesno("확인", "학습 중입니다. 중단할까요?"):
-                return
             try:
                 self.proc.terminate()
             except Exception:
                 pass
-        if self.root is not None:
-            self.root.destroy(); self.root = None
+            self.proc = None
 
 
 # ============================================================
-# 3) 모델 교체 / 다운로드
+# 탭 3) 모델 적용 / 다운로드
 # ============================================================
-# 다운로드 가능한 기본 모델 (ultralytics)
-DOWNLOADABLE = [
-    "yolov5su", "yolov8n", "yolov8s", "yolov8m", "yolov8l",
-    "yolo11n", "yolo11s", "yolo11m", "yolo11l",
-]
+class SwapTab(ttk.Frame):
+    def __init__(self, master, studio):
+        super().__init__(master)
+        self.studio = studio
+        self._build()
 
+    def _build(self):
+        tk.Label(self, text="학습한 모델이나 기본 모델을 인식에 적용(active)합니다.",
+                 font=("Malgun Gothic", 10), fg="#555", bg=BG).pack(
+            anchor="w", padx=14, pady=(10, 2))
 
-class ModelManager:
-    """기본 모델 다운로드 & 적용 + 내 model 폴더에서 선택 & 적용."""
-
-    def run(self):
-        self.root = tk.Tk()
-        self.root.title("모델 교체 / 다운로드")
-        from scrollable import make_scrollable, fit_window
-        fit_window(self.root, 480, 360)
-        body = make_scrollable(self.root)
-        tk.Label(body, text="🔄 모델 교체 / 다운로드", font=_FONT_BIG,
-                 pady=8).pack()
-        active = (get_active_name() or "active.pt") \
-            if os.path.exists(ACTIVE_MODEL) else "없음(기본 yolov5s)"
-        self.active_lbl = tk.Label(
-            body, text=f"현재 적용(active): {active}",
-            font=("Malgun Gothic", 9), fg="#777")
-        self.active_lbl.pack()
+        self.active_lbl = tk.Label(self, text="", font=("Malgun Gothic", 11,
+                                                        "bold"), fg="#2e7d32",
+                                   bg=BG)
+        self.active_lbl.pack(anchor="w", padx=14, pady=(0, 6))
 
         # 다운로드 섹션
-        df = ttk.LabelFrame(body, text="  기본 모델 다운로드 & 적용  ")
-        df.pack(fill="x", padx=12, pady=8)
+        df = ttk.LabelFrame(self, text="  기본 모델 다운로드 & 적용  ")
+        df.pack(fill="x", padx=14, pady=8)
         row = tk.Frame(df); row.pack(fill="x", padx=8, pady=8)
         tk.Label(row, text="모델", font=_FONT).pack(side="left")
         self.dl_var = tk.StringVar(value="yolov8s")
         ttk.Combobox(row, textvariable=self.dl_var, state="readonly",
                      width=14, values=DOWNLOADABLE).pack(side="left", padx=6)
-        self.dl_btn = tk.Button(row, text="⬇ 다운로드 & 적용", bg="#1565c0",
+        self.dl_btn = tk.Button(row, text="⬇ 다운로드 & 적용", bg=ACCENT,
                                 fg="white", relief="flat", cursor="hand2",
                                 command=self._download_apply)
         self.dl_btn.pack(side="left", padx=4)
         tk.Label(df, text="n/s/m/l = 크기(작음→큼, 클수록 정확·느림)",
-                 font=("Malgun Gothic", 8), fg="#999").pack(anchor="w",
-                                                            padx=10)
+                 font=("Malgun Gothic", 8), fg="#999").pack(anchor="w", padx=10,
+                                                            pady=(0, 6))
 
         # 폴더 선택 섹션
-        pf = ttk.LabelFrame(body, text="  내 model 폴더에서 선택 & 적용  ")
-        pf.pack(fill="x", padx=12, pady=8)
+        pf = ttk.LabelFrame(self, text="  내 model 폴더에서 선택 & 적용  ")
+        pf.pack(fill="x", padx=14, pady=8)
         tk.Button(pf, text="📁 model 폴더의 .pt 선택", cursor="hand2",
                   command=self._pick_apply).pack(padx=8, pady=8)
 
-        self.status = tk.Label(body, text="", font=("Malgun Gothic", 10))
+        self.status = tk.Label(self, text="", font=("Malgun Gothic", 10),
+                               bg=BG)
         self.status.pack(pady=4)
-        tk.Button(body, text="닫기", font=_FONT, width=10,
-                  command=self.root.destroy).pack(pady=(2, 10))
-        self.root.mainloop()
+
+        nav = tk.Frame(self, bg=BG); nav.pack(fill="x", padx=14, pady=(6, 12))
+        tk.Button(nav, text="✓ 완료 (창 닫기)", font=_FONT, bg=GREEN,
+                  fg="white", relief="flat", cursor="hand2", padx=14,
+                  command=self.studio.close).pack(side="right")
+
+    def on_show(self):
+        self._set_active_label()
 
     def _ui(self, fn):
         try:
-            self.root.after(0, fn)
+            self.after(0, fn)
         except Exception:
             pass
 
     def _set_active_label(self):
         active = (get_active_name() or "active.pt") \
-            if os.path.exists(ACTIVE_MODEL) else "없음"
+            if os.path.exists(ACTIVE_MODEL) else "없음 (기본 yolov5s)"
         self.active_lbl.config(text=f"현재 적용(active): {active}")
 
     def _download_apply(self):
@@ -646,7 +656,7 @@ class ModelManager:
         if not name:
             return
         self.dl_btn.config(state="disabled")
-        self.status.config(text=f"⏳ {name}.pt 다운로드 중...", fg="#ef6c00")
+        self.status.config(text=f"⏳ {name}.pt 다운로드 중...", fg=ORANGE)
         threading.Thread(target=self._dl_worker, args=(name,),
                          daemon=True).start()
 
@@ -658,7 +668,7 @@ class ModelManager:
             if os.path.exists(dst):
                 # 이미 model/ 에 있으면 다운로드하지 않고 바로 적용
                 self._ui(lambda: self.status.config(
-                    text=f"이미 있음 → 적용: {fn}", fg="#1565c0"))
+                    text=f"이미 있음 → 적용: {fn}", fg=ACCENT))
             else:
                 from ultralytics import YOLO
                 YOLO(fn)                   # 없을 때만 다운로드
@@ -701,53 +711,118 @@ class ModelManager:
 
 
 # ============================================================
-# 메뉴
+# 학습 스튜디오 (하나의 창, 탭 + 스텝 인디케이터)
 # ============================================================
+class TrainingStudio(tk.Tk):
+    STEPS = [("collect", "①", "데이터 수집"),
+             ("train", "②", "학습"),
+             ("swap", "③", "모델 적용")]
+
+    def __init__(self):
+        super().__init__()
+        self.title("로봇 학습 스튜디오 — 수집 · 학습 · 적용")
+        self.configure(bg=BG)
+        from scrollable import fit_window
+        fit_window(self, 980, 760)
+        self.minsize(820, 600)
+        self.protocol("WM_DELETE_WINDOW", self.close)
+        self._style()
+        self._header()
+
+        self.nb = ttk.Notebook(self)
+        self.nb.pack(fill="both", expand=True, padx=10, pady=(4, 10))
+        self.collect = CollectTab(self.nb, self)
+        self.train = TrainTab(self.nb, self)
+        self.swap = SwapTab(self.nb, self)
+        self.nb.add(self.collect, text="  ①  📷 데이터 수집  ")
+        self.nb.add(self.train, text="  ②  🧠 학습  ")
+        self.nb.add(self.swap, text="  ③  🚀 모델 적용  ")
+        self._tabs = {"collect": 0, "train": 1, "swap": 2}
+        self.nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+
+        self.after(120, lambda: self._on_tab_changed(None))  # 초기 진입 처리
+
+    def _style(self):
+        st = ttk.Style()
+        try:
+            st.theme_use("clam")
+        except Exception:
+            pass
+        st.configure("TNotebook", background=BG, borderwidth=0)
+        st.configure("TNotebook.Tab", font=("Malgun Gothic", 11, "bold"),
+                     padding=(16, 9), background="#dfe5f0")
+        st.map("TNotebook.Tab", background=[("selected", ACCENT)],
+               foreground=[("selected", "white")])
+        st.configure("TFrame", background=BG)
+
+    def _header(self):
+        bar = tk.Frame(self, bg=HEADER_BG, height=58)
+        bar.pack(fill="x"); bar.pack_propagate(False)
+        tk.Label(bar, text="🧠  로봇 학습 스튜디오",
+                 font=("Malgun Gothic", 15, "bold"), fg="white",
+                 bg=HEADER_BG).pack(side="left", padx=18)
+        # 스텝 인디케이터
+        steps = tk.Frame(bar, bg=HEADER_BG); steps.pack(side="right", padx=14)
+        self._step_lbls = {}
+        for i, (key, num, name) in enumerate(self.STEPS):
+            lbl = tk.Label(steps, text=f"{num} {name}",
+                           font=("Malgun Gothic", 10, "bold"),
+                           fg="#9fb3d8", bg=HEADER_BG, padx=10, pady=4)
+            lbl.pack(side="left", padx=2)
+            self._step_lbls[key] = lbl
+            if i < len(self.STEPS) - 1:
+                tk.Label(steps, text="→", fg="#5b6b8c",
+                         bg=HEADER_BG).pack(side="left")
+
+    def _update_steps(self, active_key):
+        for key, lbl in self._step_lbls.items():
+            if key == active_key:
+                lbl.config(fg="white", bg=ACCENT)
+            else:
+                lbl.config(fg="#9fb3d8", bg=HEADER_BG)
+
+    def goto(self, key):
+        idx = self._tabs.get(key)
+        if idx is not None:
+            self.nb.select(idx)
+
+    def _on_tab_changed(self, _event):
+        try:
+            cur = self.nb.index(self.nb.select())
+        except Exception:
+            return
+        key = self.STEPS[cur][0]
+        self._update_steps(key)
+        # 카메라는 수집 탭에서만 동작
+        if key == "collect":
+            self.collect.on_show()
+        else:
+            self.collect.on_hide()
+        if key == "train":
+            self.train.on_show()
+        elif key == "swap":
+            self.swap.on_show()
+
+    def close(self):
+        if self.train.is_busy():
+            if not messagebox.askyesno("확인", "학습 중입니다. 중단하고 닫을까요?"):
+                return
+            self.train.stop()
+        try:
+            self.collect.on_hide()
+        except Exception:
+            pass
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
+
+# 하위 호환: 기존 이름으로도 스튜디오를 띄울 수 있게
 class TrainingMenu:
     def run(self):
-        while True:
-            choice = self._menu()
-            if choice in (None, "back"):
-                break
-            if choice == "collect":
-                DataCollector().run()
-            elif choice == "train":
-                TrainWindow().run()
-            elif choice == "swap":
-                ModelManager().run()
-
-    def _menu(self):
-        result = {"v": None}
-        root = tk.Tk()
-        root.title("로봇 학습")
-        from scrollable import make_scrollable, fit_window
-        fit_window(root, 360, 360)
-        body = make_scrollable(root)
-
-        def pick(v):
-            result["v"] = v; root.destroy()
-
-        tk.Label(body, text="로봇 학습", font=("Malgun Gothic", 15, "bold"),
-                 pady=16).pack()
-
-        def big(text, cmd, color):
-            return tk.Button(body, text=text, font=_FONT_BIG, bg=color,
-                             fg="white", relief="flat", height=2, command=cmd)
-
-        big("📷  데이터 수집", lambda: pick("collect"), "#1565c0").pack(
-            fill="x", padx=30, pady=6)
-        big("🧠  학습 시작", lambda: pick("train"), "#28a745").pack(
-            fill="x", padx=30, pady=6)
-        big("🔄  모델 교체", lambda: pick("swap"), "#ef6c00").pack(
-            fill="x", padx=30, pady=6)
-        tk.Button(body, text="← 뒤로", font=_FONT,
-                  command=lambda: pick("back")).pack(pady=(14, 0))
-        active = "있음" if os.path.exists(ACTIVE_MODEL) else "없음(기본)"
-        tk.Label(body, text=f"현재 적용 모델(active): {active}",
-                 font=("Malgun Gothic", 9), fg="#777").pack(pady=(10, 0))
-        root.mainloop()
-        return result["v"]
+        TrainingStudio().mainloop()
 
 
 if __name__ == "__main__":
-    TrainingMenu().run()
+    TrainingStudio().mainloop()
