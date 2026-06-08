@@ -95,7 +95,7 @@ class RecognitionView(ttk.Frame):
                                 highlightthickness=0, cursor="hand2")
         self.canvas.pack(fill="both", expand=True, padx=6, pady=6)
         self.img_id = self.canvas.create_image(320, 200, anchor="center")
-        self.canvas.create_text(320, 200, text="‘연결 & 시작’을 누르세요",
+        self.canvas.create_text(320, 200, text="잠시 후 자동으로 시작됩니다...",
                                 fill="#888", font=("Malgun Gothic", 13),
                                 tags="hint")
 

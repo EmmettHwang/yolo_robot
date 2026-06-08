@@ -54,11 +54,11 @@ class MotionRunner:
             self.send_once(READY_MOTION)
 
     def stop_all(self) -> None:
-        """진행 중인 시퀀스/대기 단발을 모두 멈추고 기본자세로."""
+        """진행 중인 시퀀스/대기 단발을 모두 비우고 모션 0(중단)을 전송."""
         with self._lock:
             self._seq = None
             self._oneshots.clear()
-        self.send_once(READY_MOTION)
+        self.send_once(0)        # 모션 0 = 중단
 
     def forward(self) -> None:
         self.start_sequence(FORWARD_SEQUENCE)

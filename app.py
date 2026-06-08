@@ -246,6 +246,10 @@ class App:
             return
         if current is self.tab_train:
             self._load_model_async()
+        elif current is self.rec_view:
+            # 인식 탭에 오면 자동으로 시작 (버튼 안 눌러도 됨)
+            if not self.rec_view.running:
+                self.root.after(250, self.rec_view.start)
 
     def _load_model_async(self):
         if self._model_loaded or self._model_loading:
