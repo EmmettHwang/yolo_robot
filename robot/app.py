@@ -188,10 +188,11 @@ class App:
         self.model_status.pack(pady=4)
         self.model_pb = ttk.Progressbar(f, mode="indeterminate", length=320)
         self.model_pb.pack(pady=6)
-        # 식별 가능한 COCO 클래스 — 스크롤 리스트(로딩 중 자동 스크롤, 이후 수동 스크롤)
-        tk.Label(f, text="식별 가능한 객체 (COCO 80종)",
-                 font=("Malgun Gothic", 9, "bold"), fg="#555",
-                 bg=BG).pack()
+        # 식별 가능한 객체 — 로드된 모델의 클래스로 표시(교체/재로드 시 갱신)
+        self._coco_header = tk.Label(f, text="식별 가능한 객체 (모델 클래스)",
+                                     font=("Malgun Gothic", 9, "bold"),
+                                     fg="#555", bg=BG)
+        self._coco_header.pack()
         listwrap = tk.Frame(f, bg=BG); listwrap.pack(pady=(2, 6))
         self.coco_list = tk.Listbox(listwrap, font=("Consolas", 11), width=40,
                                     height=16, activestyle="none",
@@ -203,9 +204,7 @@ class App:
         self.coco_list.configure(yscrollcommand=csb.set)
         csb.pack(side="right", fill="y")
         self.coco_list.pack(side="left")
-        for i, name in enumerate(COCO_CLASSES):
-            kr = coco_kr(name)
-            self.coco_list.insert("end", f"{i + 1:2d}. {name} ({kr})")
+        self._set_class_list(list(COCO_CLASSES))
 
         btns = tk.Frame(f, bg=BG); btns.pack(pady=18)
         tk.Button(btns, text="🧠 학습하기 (수집/학습/교체)",
@@ -213,6 +212,9 @@ class App:
                   relief="flat", cursor="hand2", height=2, width=24,
                   command=lambda: _launch("trainer.py")).pack(side="left",
                                                               padx=6)
+        tk.Button(btns, text="🔄 모델 다시 로드", font=("Malgun Gothic", 10),
+                  cursor="hand2", height=2, width=14,
+                  command=self._reload_model).pack(side="left", padx=6)
         self.train_next = tk.Button(
             btns, text="다음 → 인식 시작 ▶", font=("Malgun Gothic", 11, "bold"),
             bg="#9e9e9e", fg="white", relief="flat", height=2, width=18,
@@ -339,12 +341,8 @@ class App:
             current = self.nb.nametowidget(self.nb.select())
         except Exception:
             return
-        # 인식 탭을 벗어나면 포트/카메라를 반환(close)해서 다른 곳이 쓸 수 있게
-        if self._prev_tab is self.rec_view and current is not self.rec_view:
-            try:
-                self.rec_view.stop()
-            except Exception:
-                pass
+        # 인식은 탭을 벗어나도 백그라운드에서 계속 돈다(중지하지 않음).
+        # 포트가 필요한 '장치 설정 열기' 때만 별도로 stop() 한다.
         self._prev_tab = current
 
         if current is self.tab_train:
@@ -417,15 +415,50 @@ class App:
             self.model_pb.pack_forget()
             self.model_status.config(text=f"✗ 모델 로드 실패: {info}", fg="#c62828")
 
+    def _set_class_list(self, names):
+        """식별 가능한 객체 리스트를 주어진 클래스명으로 채운다(번호+한글병기)."""
+        self._class_names = list(names)
+        try:
+            self.coco_list.delete(0, "end")
+            for i, name in enumerate(self._class_names):
+                kr = coco_kr(name)
+                self.coco_list.insert(
+                    "end", f"{i + 1:2d}. {name}" + (f" ({kr})" if kr else ""))
+        except Exception:
+            pass
+
+    def _model_names(self):
+        try:
+            n = self.model.names
+            if isinstance(n, dict):
+                return [n[k] for k in sorted(n)]
+            return list(n)
+        except Exception:
+            return list(COCO_CLASSES)
+
+    def _reload_model(self):
+        """모델 교체 후 active 모델을 다시 불러오고 클래스 목록 갱신."""
+        self._model_loaded = False
+        self._model_loading = False
+        self._model_failed = False
+        self._coco_idx = 0
+        self._showcase_count = 0
+        self.train_next.config(state="disabled", bg="#9e9e9e")
+        self._set_class_list(list(COCO_CLASSES))
+        if not self.model_pb.winfo_ismapped():
+            self.model_pb.pack(before=self._coco_header, pady=6)
+        self._load_model_async()
+
     def _finish_showcase(self):
         self.model_pb.stop()
         self.model_pb.pack_forget()
+        names = self._model_names()
+        self._set_class_list(names)                 # 실제 모델 클래스로 갱신
         self.model_status.config(
             text=f"✓ 모델 준비 완료 — {getattr(self, '_loaded_info', '')} "
-                 f"· {len(COCO_CLASSES)}종 식별 (목록 스크롤 가능)",
+                 f"· {len(names)}종 식별 (목록 스크롤)",
             fg="#2e7d32")
         try:
-            self.coco_list.selection_clear(0, "end")   # 하이라이트 해제, 목록 유지
             self.coco_list.see(0)
         except Exception:
             pass

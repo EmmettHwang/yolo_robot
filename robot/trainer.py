@@ -565,21 +565,126 @@ class TrainWindow:
 
 
 # ============================================================
-# 3) 모델 교체
+# 3) 모델 교체 / 다운로드
 # ============================================================
-def swap_model():
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    path = filedialog.askopenfilename(
-        title="인식에 적용할 모델 선택 (.pt)", initialdir=MODELS_DIR,
-        filetypes=[("PyTorch 가중치", "*.pt")])
-    if not path:
-        return
-    try:
-        shutil.copy(path, ACTIVE_MODEL)
-        messagebox.showinfo("완료",
-                            f"교체 완료. 인식 시작 시 적용됩니다.\n{ACTIVE_MODEL}")
-    except Exception as e:
-        messagebox.showerror("오류", f"교체 실패: {e}")
+# 다운로드 가능한 기본 모델 (ultralytics)
+DOWNLOADABLE = [
+    "yolov5su", "yolov8n", "yolov8s", "yolov8m", "yolov8l",
+    "yolo11n", "yolo11s", "yolo11m", "yolo11l",
+]
+
+
+class ModelManager:
+    """기본 모델 다운로드 & 적용 + 내 model 폴더에서 선택 & 적용."""
+
+    def run(self):
+        self.root = tk.Tk()
+        self.root.title("모델 교체 / 다운로드")
+        self.root.geometry("480x360")
+        tk.Label(self.root, text="🔄 모델 교체 / 다운로드", font=_FONT_BIG,
+                 pady=8).pack()
+        active = (os.path.basename(open_active())
+                  if os.path.exists(ACTIVE_MODEL) else "없음(기본 yolov5s)")
+        self.active_lbl = tk.Label(
+            self.root, text=f"현재 적용(active): {active}",
+            font=("Malgun Gothic", 9), fg="#777")
+        self.active_lbl.pack()
+
+        # 다운로드 섹션
+        df = ttk.LabelFrame(self.root, text="  기본 모델 다운로드 & 적용  ")
+        df.pack(fill="x", padx=12, pady=8)
+        row = tk.Frame(df); row.pack(fill="x", padx=8, pady=8)
+        tk.Label(row, text="모델", font=_FONT).pack(side="left")
+        self.dl_var = tk.StringVar(value="yolov8s")
+        ttk.Combobox(row, textvariable=self.dl_var, state="readonly",
+                     width=14, values=DOWNLOADABLE).pack(side="left", padx=6)
+        self.dl_btn = tk.Button(row, text="⬇ 다운로드 & 적용", bg="#1565c0",
+                                fg="white", relief="flat", cursor="hand2",
+                                command=self._download_apply)
+        self.dl_btn.pack(side="left", padx=4)
+        tk.Label(df, text="n/s/m/l = 크기(작음→큼, 클수록 정확·느림)",
+                 font=("Malgun Gothic", 8), fg="#999").pack(anchor="w",
+                                                            padx=10)
+
+        # 폴더 선택 섹션
+        pf = ttk.LabelFrame(self.root, text="  내 model 폴더에서 선택 & 적용  ")
+        pf.pack(fill="x", padx=12, pady=8)
+        tk.Button(pf, text="📁 model 폴더의 .pt 선택", cursor="hand2",
+                  command=self._pick_apply).pack(padx=8, pady=8)
+
+        self.status = tk.Label(self.root, text="", font=("Malgun Gothic", 10))
+        self.status.pack(pady=4)
+        tk.Button(self.root, text="닫기", font=_FONT, width=10,
+                  command=self.root.destroy).pack(pady=(2, 10))
+        self.root.mainloop()
+
+    def _ui(self, fn):
+        try:
+            self.root.after(0, fn)
+        except Exception:
+            pass
+
+    def _set_active_label(self):
+        active = (os.path.basename(open_active())
+                  if os.path.exists(ACTIVE_MODEL) else "없음")
+        self.active_lbl.config(text=f"현재 적용(active): {active}")
+
+    def _download_apply(self):
+        name = self.dl_var.get().strip()
+        if not name:
+            return
+        self.dl_btn.config(state="disabled")
+        self.status.config(text=f"⏳ {name}.pt 다운로드 중...", fg="#ef6c00")
+        threading.Thread(target=self._dl_worker, args=(name,),
+                         daemon=True).start()
+
+    def _dl_worker(self, name):
+        fn = name + ".pt"
+        try:
+            from ultralytics import YOLO
+            YOLO(fn)                       # 없으면 다운로드
+            os.makedirs(MODELS_DIR, exist_ok=True)
+            dst = os.path.join(MODELS_DIR, fn)
+            if not os.path.exists(dst):
+                for d in (BASE, os.getcwd(), MODELS_DIR):
+                    c = os.path.join(d, fn)
+                    if os.path.exists(c):
+                        if os.path.abspath(c) != os.path.abspath(dst):
+                            shutil.move(c, dst)
+                        break
+            if os.path.exists(dst):
+                shutil.copy(dst, ACTIVE_MODEL)
+                self._ui(lambda: self.status.config(
+                    text=f"✓ 적용됨: {fn} (인식에서 사용)", fg="#2e7d32"))
+                self._ui(self._set_active_label)
+            else:
+                self._ui(lambda: self.status.config(
+                    text="✗ 다운로드 파일을 찾지 못했습니다", fg="#c62828"))
+        except Exception as e:
+            self._ui(lambda ex=e: self.status.config(
+                text=f"✗ 실패: {ex}", fg="#c62828"))
+        finally:
+            self._ui(lambda: self.dl_btn.config(state="normal"))
+
+    def _pick_apply(self):
+        os.makedirs(MODELS_DIR, exist_ok=True)
+        path = filedialog.askopenfilename(
+            title="인식에 적용할 모델 선택 (.pt)", initialdir=MODELS_DIR,
+            filetypes=[("PyTorch 가중치", "*.pt")])
+        if not path:
+            return
+        try:
+            shutil.copy(path, ACTIVE_MODEL)
+            self.status.config(text=f"✓ 적용됨: {os.path.basename(path)}",
+                               fg="#2e7d32")
+            self._set_active_label()
+        except Exception as e:
+            self.status.config(text=f"✗ 실패: {e}", fg="#c62828")
+
+
+def open_active():
+    """active.pt 가 가리키는(복사된) 원본 표시용 — 단순히 active.pt 경로."""
+    return ACTIVE_MODEL
 
 
 # ============================================================
@@ -596,12 +701,7 @@ class TrainingMenu:
             elif choice == "train":
                 TrainWindow().run()
             elif choice == "swap":
-                root = tk.Tk(); root.withdraw()
-                swap_model()
-                try:
-                    root.destroy()
-                except Exception:
-                    pass
+                ModelManager().run()
 
     def _menu(self):
         result = {"v": None}
