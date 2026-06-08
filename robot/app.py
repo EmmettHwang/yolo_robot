@@ -25,7 +25,7 @@ from tkinter import ttk
 import serial.tools.list_ports as list_ports
 from PIL import Image, ImageTk
 
-from paths import BASE, CONFIG_INI, LOGO_PATH, ensure_dirs
+from paths import BASE, ROBOT_DIR, CONFIG_INI, LOGO_PATH, ensure_dirs
 from version import __version__
 from motion_table import COCO_CLASSES, coco_kr
 import trainer
@@ -40,7 +40,8 @@ ACCENT = "#1565c0"
 
 
 def _launch(script):
-    subprocess.Popen([PY, os.path.join(BASE, script)], cwd=BASE)
+    # 모듈은 robot/ 안에 있으므로 그 경로의 스크립트를 실행
+    subprocess.Popen([PY, os.path.join(ROBOT_DIR, script)], cwd=BASE)
 
 
 def _read_cfg():

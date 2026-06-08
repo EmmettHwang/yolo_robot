@@ -17,9 +17,7 @@ import re
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-from paths import ASSETS
-
-MANUAL_PDF = os.path.join(ASSETS, "라인코어엠매뉴얼.pdf")
+from paths import MANUAL_PDF
 
 _TOC_RE = re.compile(r"^(.*?\S)\s*\.{2,}\s*(\d+)\s*$")
 _TOP_RE = re.compile(r"^\d+\.\s")

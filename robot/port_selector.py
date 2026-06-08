@@ -48,6 +48,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 from motion_table import motion_label, motion_name, ALL_MOTIONS
+import paths
 
 # ---- Optional dependencies (graceful fallback) ----
 try:
@@ -204,9 +205,7 @@ class PortSelector:
         self.height = height
 
         if config_file is None:
-            config_file = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "config.ini"
-            )
+            config_file = paths.CONFIG_INI
         self.config_file = config_file
         self.config = configparser.ConfigParser()
         lasts = self._load_config()
@@ -458,9 +457,7 @@ class PortSelector:
         if not _HAS_PIL:
             return None
         try:
-            p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             "assets", "motorMap.png")
-            img = Image.open(p)
+            img = Image.open(paths.MOTORMAP_PATH)
             w = max(1, int(img.width * target_h / img.height))
             return ImageTk.PhotoImage(img.resize((w, target_h)))
         except Exception:
