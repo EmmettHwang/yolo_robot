@@ -24,7 +24,6 @@ class ControlPanel(tk.Toplevel):
         super().__init__(parent)
         self.runner = runner
         self.title("로봇 제어 — LED / 포지션 / 전원")
-        self.resizable(False, False)
         self._led_dirty = False
         self._pos_dirty = False
         self._manual = False
@@ -34,8 +33,11 @@ class ControlPanel(tk.Toplevel):
         self._flush()                # 실시간 전송 루프 시작
 
     def _build(self):
+        from scrollable import make_scrollable, fit_window
+        fit_window(self, 470, 720)
+        body = make_scrollable(self)
         # 전원
-        pw = ttk.LabelFrame(self, text="  전원(토크)  ")
+        pw = ttk.LabelFrame(body, text="  전원(토크)  ")
         pw.pack(fill="x", padx=10, pady=(10, 6))
         tk.Button(pw, text="전원 ON", bg="#28a745", fg="white", relief="flat",
                   width=12, cursor="hand2",
@@ -49,7 +51,7 @@ class ControlPanel(tk.Toplevel):
                  font=("Malgun Gothic", 8), fg="#777").pack(side="left", padx=6)
 
         # LED (실시간)
-        led = ttk.LabelFrame(self, text="  LED 제어 (실시간)  ")
+        led = ttk.LabelFrame(body, text="  LED 제어 (실시간)  ")
         led.pack(fill="x", padx=10, pady=6)
         row = tk.Frame(led); row.pack(fill="x", padx=8, pady=6)
         tk.Label(row, text="대상", font=("Malgun Gothic", 9)).pack(side="left")
@@ -81,7 +83,7 @@ class ControlPanel(tk.Toplevel):
                   command=self._led_off).pack(side="left")
 
         # 포지션 (실시간)
-        pos = ttk.LabelFrame(self, text="  포지션 제어 (실시간)  ")
+        pos = ttk.LabelFrame(body, text="  포지션 제어 (실시간)  ")
         pos.pack(fill="x", padx=10, pady=6)
         prow = tk.Frame(pos); prow.pack(fill="x", padx=8, pady=6)
         tk.Label(prow, text="관절", font=("Malgun Gothic", 9)).pack(side="left")
@@ -117,7 +119,7 @@ class ControlPanel(tk.Toplevel):
                                    fg="#6a1b9a")
         self.read_label.pack(pady=(2, 4))
 
-        tk.Label(self, text=f"※ 위치 범위 {POS_MIN}~{POS_MAX} (매뉴얼에 동작범위 "
+        tk.Label(body, text=f"※ 위치 범위 {POS_MIN}~{POS_MAX} (매뉴얼에 동작범위 "
                  "명시 없음 → 예제값 ±100 기준 보수적 제한). 작은 값부터 시험하세요.",
                  font=("Malgun Gothic", 8), fg="#999",
                  wraplength=420, justify="left").pack(pady=(0, 10), padx=10)

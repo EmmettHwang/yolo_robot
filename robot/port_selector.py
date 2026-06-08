@@ -259,6 +259,7 @@ class PortSelector:
 
         # ---- 위젯 핸들 ----
         self.root: Optional[tk.Tk] = None
+        self._content: Optional[tk.Frame] = None
         self.port_combo: Optional[ttk.Combobox] = None
         self.bt_status: Optional[tk.Label] = None
         self.motion_spin: Optional[tk.Spinbox] = None
@@ -383,8 +384,12 @@ class PortSelector:
     def _build_root(self) -> None:
         self.root = tk.Tk()
         self.root.title(self.title)
+        # 화면보다 크면 화면 높이에 맞춰 줄이고(스크롤로 나머지 처리)
+        sh = self.root.winfo_screenheight()
+        eff_h = min(self.height, max(560, sh - 80))
+        self.height = eff_h
         self.root.geometry(f"{self.width}x{self.height}")
-        self.root.minsize(self.width, self.height)
+        self.root.minsize(self.width, 560)
         self._center_window(self.root)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         # 창을 최상단으로 + 포커스(다른 윈도 아래로 안 들어가게)
@@ -415,13 +420,19 @@ class PortSelector:
             text=self.title,
             font=("Malgun Gothic", 14, "bold"),
             pady=12,
-        ).pack(fill="x")
+        ).pack(side="top", fill="x")
+
+        # 하단 고정 버튼(스크롤되지 않음) — 먼저 bottom 에 배치해 항상 보이게
+        self._build_buttons()
+
+        # 본문은 양방향 스크롤 영역 안에 둔다(내용이 창보다 커도 끝까지 볼 수 있게)
+        from scrollable import make_scrollable
+        self._content = make_scrollable(self.root)
 
         self._build_port_section()
         self._build_camera_section()
         self._build_mic_section()
         self._build_speaker_section()
-        self._build_buttons()
 
         # 초기 로딩
         self._refresh_ports()
@@ -433,7 +444,8 @@ class PortSelector:
     # ----------------- 시리얼 -----------------
     def _build_port_section(self) -> None:
         frame = ttk.LabelFrame(
-            self.root, text=f"  시리얼 포트 ({self.baudrate} bps)  ", padding=10
+            self._content, text=f"  시리얼 포트 ({self.baudrate} bps)  ",
+            padding=10
         )
         frame.pack(fill="x", padx=15, pady=(4, 6))
 
@@ -479,7 +491,12 @@ class PortSelector:
         mm = self._load_motormap(150)
         if mm is not None:
             self._motormap_img = mm
-            tk.Label(img_holder, image=mm, bg="#1e1e1e").pack(padx=4, pady=4)
+            lbl = tk.Label(img_holder, image=mm, bg="#1e1e1e", cursor="hand2")
+            lbl.pack(padx=4, pady=(4, 0))
+            lbl.bind("<Button-1>", lambda e: self._show_motormap_full())
+            tk.Label(img_holder, text="🔍 클릭하면 크게 보기", bg="#1e1e1e",
+                     fg="#9fb3d8", font=("Malgun Gothic", 8),
+                     cursor="hand2").pack(pady=(0, 4))
         else:
             cv = tk.Canvas(img_holder, width=72, height=88, bg="#1e1e1e",
                            highlightthickness=1, highlightbackground="#555")
@@ -573,6 +590,37 @@ class PortSelector:
             self.bt_status.config(
                 text="검색된 포트가 없습니다. 페어링을 먼저 완료하세요 (PIN 0000).",
                 fg="#c62828")
+
+    def _show_motormap_full(self) -> None:
+        """모터 맵 이미지를 큰 창으로 자세히 보여준다(화면에 맞춰 확대, 스크롤 지원)."""
+        if not _HAS_PIL:
+            return
+        try:
+            img = Image.open(paths.MOTORMAP_PATH)
+        except Exception:
+            return
+        top = tk.Toplevel(self.root)
+        top.title("모터 맵 — 자세히 보기")
+        sw, sh = top.winfo_screenwidth(), top.winfo_screenheight()
+        w, h = img.width, img.height
+        # 화면에 맞춰 확대(작으면 키우고, 너무 크면 줄임). 최대 4배.
+        scale = min((sw - 140) / w, (sh - 200) / h, 4.0)
+        if scale > 0 and abs(scale - 1.0) > 0.01:
+            img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))))
+        photo = ImageTk.PhotoImage(img)
+        top._photo = photo                      # 참조 유지(GC 방지)
+
+        from scrollable import make_scrollable, fit_window
+        fit_window(top, img.width + 50, img.height + 90)
+        body = make_scrollable(top, bg="#1e1e1e")
+        tk.Label(body, image=photo, bg="#1e1e1e").pack(padx=8, pady=8)
+        tk.Button(body, text="닫기", width=12,
+                  command=top.destroy).pack(pady=(0, 10))
+        try:
+            top.lift(); top.attributes("-topmost", True)
+            top.after(60, top.focus_force)
+        except Exception:
+            pass
 
     def _load_motormap(self, target_h: int):
         """assets/motorMap.png 을 target_h 높이로 로드. 실패 시 None."""
@@ -852,7 +900,7 @@ class PortSelector:
 
     # ----------------- 카메라 -----------------
     def _build_camera_section(self) -> None:
-        frame = ttk.LabelFrame(self.root, text="  카메라  ", padding=10)
+        frame = ttk.LabelFrame(self._content, text="  카메라  ", padding=10)
         frame.pack(fill="x", padx=15, pady=6)
 
         row = tk.Frame(frame); row.pack(fill="x")
@@ -902,7 +950,7 @@ class PortSelector:
 
     # ----------------- 마이크 -----------------
     def _build_mic_section(self) -> None:
-        frame = ttk.LabelFrame(self.root, text="  마이크 (입력)  ", padding=10)
+        frame = ttk.LabelFrame(self._content, text="  마이크 (입력)  ", padding=10)
         frame.pack(fill="x", padx=15, pady=6)
 
         row = tk.Frame(frame); row.pack(fill="x")
@@ -950,7 +998,7 @@ class PortSelector:
 
     # ----------------- 스피커 -----------------
     def _build_speaker_section(self) -> None:
-        frame = ttk.LabelFrame(self.root, text="  스피커 (출력)  ", padding=10)
+        frame = ttk.LabelFrame(self._content, text="  스피커 (출력)  ", padding=10)
         frame.pack(fill="x", padx=15, pady=6)
 
         row = tk.Frame(frame); row.pack(fill="x")
@@ -976,7 +1024,8 @@ class PortSelector:
 
     # ----------------- 하단 버튼 -----------------
     def _build_buttons(self) -> None:
-        bar = tk.Frame(self.root); bar.pack(fill="x", padx=15, pady=(16, 12))
+        bar = tk.Frame(self.root)
+        bar.pack(side="bottom", fill="x", padx=15, pady=(16, 12))
         ttk.Button(bar, text="취소", width=12,
                    command=self._on_close).pack(side="right", padx=(8, 0))
         ok = tk.Button(

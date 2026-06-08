@@ -432,15 +432,18 @@ class TrainWindow:
         self.root = tk.Tk()
         self.root.title("학습 시작")
         self.root.protocol("WM_DELETE_WINDOW", self._close)
+        from scrollable import make_scrollable, fit_window
+        fit_window(self.root, 760, 640)
+        body = make_scrollable(self.root)
 
-        tk.Label(self.root, text="모델 학습", font=_FONT_BIG, pady=8).pack()
+        tk.Label(body, text="모델 학습", font=_FONT_BIG, pady=8).pack()
         classes = load_classes()
         total = sum(count_images(c) for c in classes)
-        tk.Label(self.root, text=f"클래스 {len(classes)}개 / 이미지 {total}장\n"
+        tk.Label(body, text=f"클래스 {len(classes)}개 / 이미지 {total}장\n"
                  "※ CPU 학습이라 느립니다. 에폭을 작게 두세요.",
                  font=("Malgun Gothic", 9), fg="#555").pack()
 
-        row = tk.Frame(self.root); row.pack(pady=4)
+        row = tk.Frame(body); row.pack(pady=4)
         tk.Label(row, text="에폭", font=_FONT).pack(side="left")
         self.epoch_var = tk.StringVar(value="30")
         tk.Spinbox(row, from_=1, to=300, width=6,
@@ -450,14 +453,14 @@ class TrainWindow:
         ttk.Combobox(row, textvariable=self.img_var, width=6, state="readonly",
                      values=[str(s) for s in SIZES]).pack(side="left", padx=6)
 
-        self.start_btn = tk.Button(self.root, text="▶ 학습 시작",
+        self.start_btn = tk.Button(body, text="▶ 학습 시작",
                                    font=_FONT_BIG, bg="#28a745", fg="white",
                                    relief="flat", padx=14, command=self._start)
         self.start_btn.pack(pady=8)
-        self.log = tk.Text(self.root, width=86, height=18, bg="#1e1e1e",
+        self.log = tk.Text(body, width=86, height=18, bg="#1e1e1e",
                            fg="#d4d4d4", font=("Consolas", 9))
         self.log.pack(padx=12, pady=(0, 6))
-        tk.Button(self.root, text="닫기", font=_FONT, width=10,
+        tk.Button(body, text="닫기", font=_FONT, width=10,
                   command=self._close).pack(pady=(0, 10))
         self.root.mainloop()
 
@@ -587,18 +590,20 @@ class ModelManager:
     def run(self):
         self.root = tk.Tk()
         self.root.title("모델 교체 / 다운로드")
-        self.root.geometry("480x360")
-        tk.Label(self.root, text="🔄 모델 교체 / 다운로드", font=_FONT_BIG,
+        from scrollable import make_scrollable, fit_window
+        fit_window(self.root, 480, 360)
+        body = make_scrollable(self.root)
+        tk.Label(body, text="🔄 모델 교체 / 다운로드", font=_FONT_BIG,
                  pady=8).pack()
         active = (get_active_name() or "active.pt") \
             if os.path.exists(ACTIVE_MODEL) else "없음(기본 yolov5s)"
         self.active_lbl = tk.Label(
-            self.root, text=f"현재 적용(active): {active}",
+            body, text=f"현재 적용(active): {active}",
             font=("Malgun Gothic", 9), fg="#777")
         self.active_lbl.pack()
 
         # 다운로드 섹션
-        df = ttk.LabelFrame(self.root, text="  기본 모델 다운로드 & 적용  ")
+        df = ttk.LabelFrame(body, text="  기본 모델 다운로드 & 적용  ")
         df.pack(fill="x", padx=12, pady=8)
         row = tk.Frame(df); row.pack(fill="x", padx=8, pady=8)
         tk.Label(row, text="모델", font=_FONT).pack(side="left")
@@ -614,14 +619,14 @@ class ModelManager:
                                                             padx=10)
 
         # 폴더 선택 섹션
-        pf = ttk.LabelFrame(self.root, text="  내 model 폴더에서 선택 & 적용  ")
+        pf = ttk.LabelFrame(body, text="  내 model 폴더에서 선택 & 적용  ")
         pf.pack(fill="x", padx=12, pady=8)
         tk.Button(pf, text="📁 model 폴더의 .pt 선택", cursor="hand2",
                   command=self._pick_apply).pack(padx=8, pady=8)
 
-        self.status = tk.Label(self.root, text="", font=("Malgun Gothic", 10))
+        self.status = tk.Label(body, text="", font=("Malgun Gothic", 10))
         self.status.pack(pady=4)
-        tk.Button(self.root, text="닫기", font=_FONT, width=10,
+        tk.Button(body, text="닫기", font=_FONT, width=10,
                   command=self.root.destroy).pack(pady=(2, 10))
         self.root.mainloop()
 
@@ -715,16 +720,18 @@ class TrainingMenu:
         result = {"v": None}
         root = tk.Tk()
         root.title("로봇 학습")
-        root.geometry("360x360")
+        from scrollable import make_scrollable, fit_window
+        fit_window(root, 360, 360)
+        body = make_scrollable(root)
 
         def pick(v):
             result["v"] = v; root.destroy()
 
-        tk.Label(root, text="로봇 학습", font=("Malgun Gothic", 15, "bold"),
+        tk.Label(body, text="로봇 학습", font=("Malgun Gothic", 15, "bold"),
                  pady=16).pack()
 
         def big(text, cmd, color):
-            return tk.Button(root, text=text, font=_FONT_BIG, bg=color,
+            return tk.Button(body, text=text, font=_FONT_BIG, bg=color,
                              fg="white", relief="flat", height=2, command=cmd)
 
         big("📷  데이터 수집", lambda: pick("collect"), "#1565c0").pack(
@@ -733,10 +740,10 @@ class TrainingMenu:
             fill="x", padx=30, pady=6)
         big("🔄  모델 교체", lambda: pick("swap"), "#ef6c00").pack(
             fill="x", padx=30, pady=6)
-        tk.Button(root, text="← 뒤로", font=_FONT,
+        tk.Button(body, text="← 뒤로", font=_FONT,
                   command=lambda: pick("back")).pack(pady=(14, 0))
         active = "있음" if os.path.exists(ACTIVE_MODEL) else "없음(기본)"
-        tk.Label(root, text=f"현재 적용 모델(active): {active}",
+        tk.Label(body, text=f"현재 적용 모델(active): {active}",
                  font=("Malgun Gothic", 9), fg="#777").pack(pady=(10, 0))
         root.mainloop()
         return result["v"]
