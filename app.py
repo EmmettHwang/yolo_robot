@@ -27,7 +27,7 @@ from PIL import Image, ImageTk
 
 from paths import BASE, CONFIG_INI, LOGO_PATH, ensure_dirs
 from version import __version__
-from motion_table import COCO_CLASSES
+from motion_table import COCO_CLASSES, coco_kr
 import trainer
 import yolo as yolo_mod
 from object_actions import ActionEditor
@@ -180,12 +180,24 @@ class App:
         self.model_status.pack(pady=4)
         self.model_pb = ttk.Progressbar(f, mode="indeterminate", length=320)
         self.model_pb.pack(pady=6)
-        # 로딩 중 식별 가능한 COCO 클래스 — 번호 붙여 10줄 스크롤
-        self.coco_label = tk.Label(f, text="", font=("Consolas", 11),
-                                   fg="#1565c0", bg="white", justify="left",
-                                   anchor="nw", width=30, height=10,
-                                   relief="groove", padx=12, pady=6)
-        self.coco_label.pack(pady=(2, 6))
+        # 식별 가능한 COCO 클래스 — 스크롤 리스트(로딩 중 자동 스크롤, 이후 수동 스크롤)
+        tk.Label(f, text="식별 가능한 객체 (COCO 80종)",
+                 font=("Malgun Gothic", 9, "bold"), fg="#555",
+                 bg=BG).pack()
+        listwrap = tk.Frame(f, bg=BG); listwrap.pack(pady=(2, 6))
+        self.coco_list = tk.Listbox(listwrap, font=("Consolas", 11), width=40,
+                                    height=16, activestyle="none",
+                                    highlightthickness=1, fg="#1565c0",
+                                    selectbackground="#1565c0",
+                                    selectforeground="white")
+        csb = ttk.Scrollbar(listwrap, orient="vertical",
+                            command=self.coco_list.yview)
+        self.coco_list.configure(yscrollcommand=csb.set)
+        csb.pack(side="right", fill="y")
+        self.coco_list.pack(side="left")
+        for i, name in enumerate(COCO_CLASSES):
+            kr = coco_kr(name)
+            self.coco_list.insert("end", f"{i + 1:2d}. {name} ({kr})")
 
         btns = tk.Frame(f, bg=BG); btns.pack(pady=18)
         tk.Button(btns, text="🧠 학습하기 (수집/학습/교체)",
@@ -281,7 +293,14 @@ class App:
                 self.root.after(250, self.rec_view.start)
 
     def _load_model_async(self):
-        if self._model_loaded or self._model_loading:
+        if self._model_loaded:
+            # 이미 로드됨(되돌아온 경우) → 목록을 다시 보여줌
+            try:
+                self.coco_list.see(0)
+            except Exception:
+                pass
+            return
+        if self._model_loading:
             return
         self._model_loading = True
         self._model_failed = False
@@ -294,18 +313,15 @@ class App:
         threading.Thread(target=self._load_worker, daemon=True).start()
 
     def _cycle_coco(self):
-        """로딩 중 COCO 클래스를 번호 붙여 10줄씩 스크롤. (모델 준비 + 한 바퀴 후 종료)"""
+        """로딩 중 리스트를 한 줄씩 하이라이트하며 자동 스크롤. (모델 준비+한 바퀴 후 종료)"""
         if self._model_failed:
             return
         n = len(COCO_CLASSES)
         try:
-            start = self._coco_idx % n
-            lines = []
-            for j in range(10):
-                k = (start + j) % n
-                marker = "▶" if j == 0 else " "
-                lines.append(f"{marker}{k + 1:2d}. {COCO_CLASSES[k]}")
-            self.coco_label.config(text="\n".join(lines))
+            idx = self._coco_idx % n
+            self.coco_list.selection_clear(0, "end")
+            self.coco_list.selection_set(idx)
+            self.coco_list.see(idx)
         except Exception:
             return
         self._coco_idx += 1
@@ -314,7 +330,7 @@ class App:
         if self._model_loaded and self._showcase_count >= n:
             self._finish_showcase()
             return
-        self.root.after(120, self._cycle_coco)
+        self.root.after(70, self._cycle_coco)
 
     def _load_worker(self):
         try:
@@ -342,10 +358,14 @@ class App:
         self.model_pb.stop()
         self.model_pb.pack_forget()
         self.model_status.config(
-            text=f"✓ 모델 준비 완료 — {getattr(self, '_loaded_info', '')}",
+            text=f"✓ 모델 준비 완료 — {getattr(self, '_loaded_info', '')} "
+                 f"· {len(COCO_CLASSES)}종 식별 (목록 스크롤 가능)",
             fg="#2e7d32")
-        self.coco_label.config(
-            text=f"총 {len(COCO_CLASSES)}종 객체 식별 가능", fg="#2e7d32")
+        try:
+            self.coco_list.selection_clear(0, "end")   # 하이라이트 해제, 목록 유지
+            self.coco_list.see(0)
+        except Exception:
+            pass
         self.train_next.config(state="normal", bg=ACCENT)
         try:
             current = self.nb.nametowidget(self.nb.select())
