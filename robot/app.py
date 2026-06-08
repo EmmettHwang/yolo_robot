@@ -259,7 +259,7 @@ class App:
         self.dev_status.config(text="🔧 장치 설정창에서 포트·카메라·마이크를 테스트하세요...",
                                fg="#ef6c00")
         self._dev_proc = subprocess.Popen(
-            [PY, os.path.join(BASE, "port_selector.py")], cwd=BASE)
+            [PY, os.path.join(ROBOT_DIR, "port_selector.py")], cwd=BASE)
         self._show_wait_dialog()        # 메인 윈도 잠금 + 안내
         self._watch_device_proc()
 
