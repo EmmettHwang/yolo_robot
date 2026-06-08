@@ -563,8 +563,8 @@ class PortSelector:
             return
         if robot_port:
             self.bt_status.config(
-                text=f"✓ 휴머노이드(FB153) 발견 — {robot_port} 자동 선택됨. "
-                     "'동작 테스트'로 확인해 보세요.", fg="#2e7d32")
+                text="✓ 휴머노이드(FB153) 발견 — 아래 드롭다운에서 선택하세요",
+                fg="#2e7d32")
         elif self._ports:
             self.bt_status.config(
                 text="포트는 검색됐지만 FB153은 아직 안 보입니다. "
