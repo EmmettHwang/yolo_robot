@@ -212,7 +212,8 @@ class App:
                  bg=BG).pack(pady=(26, 6))
 
         self.model_status = tk.Label(
-            f, text="YOLOv5 모델 로딩 준비...", font=("Malgun Gothic", 12, "bold"),
+            f, text="cocoDataSet Class 로딩 준비...",
+            font=("Malgun Gothic", 12, "bold"),
             fg="#ef6c00", bg=BG)
         self.model_status.pack(pady=4)
         self.model_pb = ttk.Progressbar(f, mode="indeterminate", length=320)
@@ -398,7 +399,7 @@ class App:
         self._model_failed = False
         self._coco_idx = 0
         self._showcase_count = 0
-        self.model_status.config(text="⏳ YOLOv5 모델 로딩 중... 식별 가능한 객체:",
+        self.model_status.config(text="⏳ cocoDataSet Class 로딩중... 식별 가능한 객체:",
                                  fg="#ef6c00")
         self.model_pb.start(12)
         self._cycle_coco()                       # COCO 클래스 쭈루룩
