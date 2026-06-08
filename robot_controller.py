@@ -46,6 +46,8 @@ from typing import Optional
 
 import serial
 
+import protocol
+
 
 # ============================================================
 # 1. HumanoidRobot : 시리얼 연결 + 패킷 전송
@@ -114,36 +116,45 @@ class HumanoidRobot:
     # ---------- 패킷 ----------
     @classmethod
     def build_packet(cls, motion_index: int) -> bytearray:
-        """모션 인덱스를 받아 15바이트 패킷(체크섬 포함)을 생성한다."""
-        if not (0 <= motion_index <= 0xFF):
-            raise ValueError(f"motion_index 범위 오류: {motion_index} (0~255)")
+        """모션 인덱스 → Exe Motion 패킷 (호환용)."""
+        return protocol.motion(motion_index)
 
-        packet = [
-            0xFF, 0xFF, 0x4C, 0x53, 0x00, 0x00, 0x00, 0x00,
-            0x30, 0x0C, 0x03, motion_index, 0x00, 100, 0x00,
-        ]
-        # checksum: byte[6]~byte[13] 합산
-        chk = 0
-        for i in range(6, 14):
-            chk = (chk + packet[i]) & 0xFF
-        packet[14] = chk
-        return bytearray(packet)
-
-    # ---------- 전송 ----------
-    def send_motion(self, motion_index: int) -> bool:
-        """주어진 모션 인덱스를 실행하는 패킷을 전송한다.
-        성공 시 True, 포트가 닫혀 있어 못 보낸 경우 False."""
+    # ---------- 저수준 전송 ----------
+    def _write(self, packet: bytearray) -> bool:
+        """패킷 1개 전송. 끊김/타임아웃이면 포트 정리 후 False."""
         if not self.is_connected:
             return False
-        packet = self.build_packet(motion_index)
         try:
             self.ser.write(packet)
             self.ser.flush()
         except Exception:
-            # write_timeout 초과/무선 링크 끊김 → 무한 대기 대신 포트 정리 후 실패
+            # write_timeout 초과/무선 링크 끊김 → 무한 대기 대신 포트 정리
             self.close()
             return False
         return True
+
+    # ---------- 고수준 전송 ----------
+    def send_motion(self, motion_index: int) -> bool:
+        """모션 실행 패킷 전송."""
+        return self._write(protocol.motion(motion_index))
+
+    def send_leds(self, leds) -> bool:
+        """LED 제어. leds = [(id, r, g, b), ...] (0~255)."""
+        return self._write(protocol.led(leds))
+
+    def send_led(self, jid: int, r: int, g: int, b: int) -> bool:
+        return self.send_leds([(jid, r, g, b)])
+
+    def send_positions(self, positions) -> bool:
+        """포지션 제어. positions = [(id, pos_signed16, torque%), ...]."""
+        return self._write(protocol.position(positions))
+
+    def send_position(self, jid: int, pos: int, torque: int = 80) -> bool:
+        return self.send_positions([(jid, pos, torque)])
+
+    def power(self, on: bool) -> bool:
+        """모터 전원(토크) ON/OFF."""
+        return self._write(protocol.power(on))
 
     # ---------- 컨텍스트 매니저 ----------
     def __enter__(self):

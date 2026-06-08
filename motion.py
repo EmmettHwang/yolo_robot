@@ -37,9 +37,23 @@ class MotionRunner:
         self._thread.start()
 
     # ---------- 외부 API ----------
-    def send_once(self, motion: int) -> None:
+    def _enqueue(self, task) -> None:
         with self._lock:
-            self._oneshots.append(int(motion))
+            self._oneshots.append(task)
+
+    def send_once(self, motion: int) -> None:
+        self._enqueue(("motion", int(motion)))
+
+    def led(self, leds) -> None:
+        """LED 제어 큐잉. leds = [(id, r, g, b), ...]"""
+        self._enqueue(("led", list(leds)))
+
+    def position(self, positions) -> None:
+        """포지션 제어 큐잉. positions = [(id, pos, torque), ...]"""
+        self._enqueue(("pos", list(positions)))
+
+    def power(self, on: bool) -> None:
+        self._enqueue(("pwr", bool(on)))
 
     def start_sequence(self, seq, delay_ms: int = None) -> None:
         with self._lock:
@@ -71,8 +85,22 @@ class MotionRunner:
         return self._disconnected
 
     # ---------- 내부 ----------
-    def _send(self, motion: int) -> bool:
-        ok = bool(self.robot.send_motion(motion)) if self.robot else False
+    def _do(self, task) -> bool:
+        """task = (kind, payload). 모든 로봇 전송을 이 스레드에서 직렬화."""
+        kind, payload = task
+        r = self.robot
+        if r is None:
+            ok = False
+        elif kind == "motion":
+            ok = bool(r.send_motion(payload))
+        elif kind == "led":
+            ok = bool(r.send_leds(payload))
+        elif kind == "pos":
+            ok = bool(r.send_positions(payload))
+        elif kind == "pwr":
+            ok = bool(r.power(payload))
+        else:
+            ok = True
         if not ok:
             self._disconnected = True
             if self.on_disconnect:
@@ -82,16 +110,19 @@ class MotionRunner:
                     pass
         return ok
 
+    def _send(self, motion: int) -> bool:
+        return self._do(("motion", motion))
+
     def _loop(self) -> None:
         while not self._stop.is_set():
-            shot = None
+            task = None
             with self._lock:
                 if self._oneshots:
-                    shot = self._oneshots.pop(0)
+                    task = self._oneshots.pop(0)
                 seq = list(self._seq) if self._seq else None
 
-            if shot is not None:
-                self._send(shot)
+            if task is not None:
+                self._do(task)
                 self._stop.wait(0.05)
                 continue
 

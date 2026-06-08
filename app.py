@@ -79,6 +79,7 @@ class App:
         self._model_loading = False
         self._model_loaded = False
         self._dev_proc = None
+        self._prev_tab = None
 
         self._header()
 
@@ -212,6 +213,11 @@ class App:
         """장치 설정창(독립 프로세스)을 열고, 닫히면 재검증 후 진행."""
         if self._dev_proc is not None and self._dev_proc.poll() is None:
             return                                  # 이미 열려 있음
+        # 인식이 포트를 잡고 있으면 먼저 반환(설정창 프로세스가 포트를 열 수 있게)
+        try:
+            self.rec_view.stop()
+        except Exception:
+            pass
         self.dev_status.config(text="🔧 장치 설정창에서 포트·카메라·마이크를 테스트하세요...",
                                fg="#ef6c00")
         self._dev_proc = subprocess.Popen(
@@ -244,10 +250,18 @@ class App:
             current = self.nb.nametowidget(self.nb.select())
         except Exception:
             return
+        # 인식 탭을 벗어나면 포트/카메라를 반환(close)해서 다른 곳이 쓸 수 있게
+        if self._prev_tab is self.rec_view and current is not self.rec_view:
+            try:
+                self.rec_view.stop()
+            except Exception:
+                pass
+        self._prev_tab = current
+
         if current is self.tab_train:
             self._load_model_async()
         elif current is self.rec_view:
-            # 인식 탭에 오면 자동으로 시작 (버튼 안 눌러도 됨)
+            # 인식 탭에 오면 포트를 새로 열고 자동 시작 (버튼 안 눌러도 됨)
             if not self.rec_view.running:
                 self.root.after(250, self.rec_view.start)
 

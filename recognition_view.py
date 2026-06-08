@@ -123,6 +123,9 @@ class RecognitionView(ttk.Frame):
             bg="#ef6c00", fg="white", relief="flat",
             command=self._stop_motion)
         self.stop_btn.pack(side="left", padx=(8, 0))
+        tk.Button(ctrl, text="🎛 로봇 제어", width=10, cursor="hand2",
+                  bg="#6a1b9a", fg="white", relief="flat",
+                  command=self._open_control_panel).pack(side="left", padx=(8, 0))
         ttk.Button(ctrl, text="↻ 매핑 새로고침", cursor="hand2",
                    command=self._reload_mapping).pack(side="left", padx=(8, 0))
 
@@ -177,12 +180,26 @@ class RecognitionView(ttk.Frame):
             messagebox.showwarning(
                 "알림", "포트가 설정되지 않았습니다.\n'포트/장치 설정' 탭에서 먼저 선택하세요.")
             return
-        try:
-            self.robot = HumanoidRobot(port, 115200)
-            self.robot.connect()
-        except Exception as e:
-            messagebox.showerror("연결 실패", f"{port} 연결 실패:\n{e}")
-            self.robot = None
+        # 다른 곳/이전 세션이 포트를 안 닫았을 수 있으니 먼저 정리(close)
+        self._cleanup()
+        # 포트가 직전에 닫혀 OS가 늦게 풀어줄 수 있어 몇 번 재시도(close→open)
+        self.robot = None
+        for attempt in range(4):
+            try:
+                r = HumanoidRobot(port, 115200)
+                r.connect()
+                self.robot = r
+                break
+            except Exception as e:
+                last_err = e
+                try:
+                    r.close()
+                except Exception:
+                    pass
+                time.sleep(0.4)
+        if self.robot is None:
+            messagebox.showerror("연결 실패",
+                                 f"{port} 연결 실패:\n{last_err}")
             return
         if self._pre_model is not None:
             self.model = self._pre_model              # 앱에서 미리 로드한 모델 재사용
@@ -389,6 +406,13 @@ class RecognitionView(ttk.Frame):
     def _stop_motion(self):
         if self.runner:
             self.runner.stop_all()
+
+    def _open_control_panel(self):
+        if not self.runner:
+            messagebox.showinfo("알림", "먼저 '연결 & 시작'을 누르세요.")
+            return
+        from robot_control_panel import ControlPanel
+        ControlPanel(self.winfo_toplevel(), self.runner)
 
     def _toggle_sound(self):
         self.sound_on = not self.sound_on

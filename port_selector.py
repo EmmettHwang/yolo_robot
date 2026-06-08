@@ -286,6 +286,12 @@ class PortSelector:
         self._motion_test_running = False
         self._motion_test_cancel = threading.Event()
         self._motion_test_robot = None
+        # ---- LED 테스트 상태 ----
+        self._led_test_running = False
+        self._led_cancel = threading.Event()
+        self.led_test_btn = None
+        self.led_test_status = None
+        self._motormap_img = None
 
     # ============================================================
     # Config (INI)
@@ -401,14 +407,17 @@ class PortSelector:
         ttk.Button(row, text="↻", width=3,
                    command=self._refresh_ports).pack(side="left", padx=(6, 0))
 
-        # 로봇 그림 + 동작 테스트 (COM5/COM6 중 어느 게 로봇인지 눌러서 확인)
+        # 모터맵 + 동작/LED 테스트
         test_row = tk.Frame(frame); test_row.pack(fill="x", pady=(10, 0))
-        canvas = tk.Canvas(
-            test_row, width=72, height=88, bg="#1e1e1e",
-            highlightthickness=1, highlightbackground="#555",
-        )
-        canvas.pack(side="left")
-        self._draw_robot_icon(canvas)
+        img_holder = tk.Frame(test_row, bg="#1e1e1e"); img_holder.pack(side="left")
+        mm = self._load_motormap(150)
+        if mm is not None:
+            self._motormap_img = mm
+            tk.Label(img_holder, image=mm, bg="#1e1e1e").pack(padx=4, pady=4)
+        else:
+            cv = tk.Canvas(img_holder, width=72, height=88, bg="#1e1e1e",
+                           highlightthickness=1, highlightbackground="#555")
+            cv.pack(); self._draw_robot_icon(cv)
 
         ctrl = tk.Frame(test_row); ctrl.pack(side="left", padx=(12, 0), fill="y")
         mrow = tk.Frame(ctrl); mrow.pack(anchor="w", pady=(2, 4))
@@ -416,16 +425,49 @@ class PortSelector:
         self.motion_spin = tk.Spinbox(mrow, from_=1, to=255, width=5)
         self.motion_spin.delete(0, "end"); self.motion_spin.insert(0, "19")
         self.motion_spin.pack(side="left", padx=(6, 0))
+
+        brow = tk.Frame(ctrl); brow.pack(anchor="w")
         self.motion_test_btn = ttk.Button(
-            ctrl, text="🤖  동작 테스트", width=18,
+            brow, text="🤖  동작 테스트", width=15,
             command=self._start_motion_test, style="Big.TButton",
         )
-        self.motion_test_btn.pack(anchor="w")
+        self.motion_test_btn.pack(side="left")
+        self.led_test_btn = ttk.Button(
+            brow, text="🌈  LED 테스트", width=14,
+            command=self._start_led_test, style="Big.TButton",
+        )
+        self.led_test_btn.pack(side="left", padx=(6, 0))
+
         self.motion_test_status = tk.Label(
             ctrl, text="포트가 맞는지 모르면 눌러보세요", fg="gray",
             font=("Malgun Gothic", 9), justify="left", wraplength=360,
         )
         self.motion_test_status.pack(anchor="w", pady=(6, 0))
+        self.led_test_status = tk.Label(
+            ctrl, text="", fg="gray", font=("Malgun Gothic", 9),
+            justify="left", wraplength=360,
+        )
+        self.led_test_status.pack(anchor="w", pady=(2, 0))
+
+    def _load_motormap(self, target_h: int):
+        """assets/motorMap.png 을 target_h 높이로 로드. 실패 시 None."""
+        if not _HAS_PIL:
+            return None
+        try:
+            p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "assets", "motorMap.png")
+            img = Image.open(p)
+            w = max(1, int(img.width * target_h / img.height))
+            return ImageTk.PhotoImage(img.resize((w, target_h)))
+        except Exception:
+            return None
+
+    @staticmethod
+    def _rainbow(h: float):
+        """0~1 색상값 → (r,g,b) 0~255."""
+        import colorsys
+        r, g, b = colorsys.hsv_to_rgb(h % 1.0, 1.0, 1.0)
+        return int(r * 255), int(g * 255), int(b * 255)
 
     def _draw_robot_icon(self, cv: tk.Canvas) -> None:
         """외부 이미지 없이 간단한 로봇 일러스트를 그린다."""
@@ -549,6 +591,111 @@ class PortSelector:
                     text="■ 중지됨 — 다른 포트를 골라 다시 테스트하세요",
                     fg="#c62828"))
             self._ui(self._reset_motion_test_btn)
+
+    # ----------------- LED 테스트 (1~18 화려하게) -----------------
+    def _start_led_test(self) -> None:
+        if self._led_test_running:
+            self._stop_led_test()
+            return
+        if self._motion_test_running:
+            return
+        if not self._ports or self.port_combo.current() < 0:
+            self.led_test_status.config(text="시리얼 포트를 먼저 선택하세요",
+                                        fg="#c62828")
+            return
+        port = self._ports[self.port_combo.current()].device
+        self._led_test_running = True
+        self._led_cancel.clear()
+        self.led_test_btn.config(text="■  LED 중지")
+        self.led_test_status.config(text="🌈 LED 테스트 시작...", fg="#1565c0")
+        threading.Thread(target=self._led_test_worker, args=(port,),
+                         daemon=True).start()
+
+    def _stop_led_test(self) -> None:
+        self._led_cancel.set()
+        r = self._motion_test_robot
+        if r is not None:
+            try:
+                r.close()
+            except Exception:
+                pass
+
+    def _led_test_worker(self, port: str) -> None:
+        cancel = self._led_cancel
+        robot = None
+        ids = list(range(1, 19))
+        groups = [("오른다리", [9, 7, 5, 3, 1]), ("왼다리", [10, 8, 6, 4, 2]),
+                  ("오른팔", [11, 13, 15]), ("왼팔", [12, 14, 16]),
+                  ("허리", [17]), ("머리", [18])]
+        try:
+            from robot_controller import HumanoidRobot
+            robot = HumanoidRobot(port, self.baudrate)
+            robot.connect()
+            self._motion_test_robot = robot
+            if not robot.is_connected:
+                self._ui(lambda: self.led_test_status.config(
+                    text=f"✗ {port} 를 열지 못했습니다.", fg="#c62828"))
+                return
+
+            # 1) 순차 점등 1→18 (무지개로 흐르듯)
+            for k, i in enumerate(ids):
+                if cancel.is_set():
+                    return
+                r, g, b = self._rainbow(k / 18.0)
+                robot.send_leds([(i, r, g, b)])
+                self._ui(lambda i=i: self.led_test_status.config(
+                    text=f"① 순차 점등  ID {i} ({i}/18)", fg="#1565c0"))
+                if cancel.wait(0.12):
+                    return
+
+            # 2) 부위별 플래시 (다리/팔/허리/머리)
+            for gi, (name, grp) in enumerate(groups):
+                if cancel.is_set():
+                    return
+                r, g, b = self._rainbow(gi / len(groups))
+                robot.send_leds([(j, 0, 0, 0) for j in ids])    # 전체 끄고
+                robot.send_leds([(j, r, g, b) for j in grp])    # 해당 부위만 점등
+                self._ui(lambda name=name: self.led_test_status.config(
+                    text=f"② 부위 점등  {name}", fg="#2e7d32"))
+                if cancel.wait(0.4):
+                    return
+
+            # 3) 전체 무지개 회전 (화려하게)
+            for t in range(28):
+                if cancel.is_set():
+                    return
+                leds = [(i,) + self._rainbow((i - 1) / 18.0 + t / 18.0)
+                        for i in ids]
+                robot.send_leds(leds)
+                self._ui(lambda: self.led_test_status.config(
+                    text="③ 무지개 회전 🌈", fg="#6a1b9a"))
+                if cancel.wait(0.07):
+                    return
+
+            robot.send_leds([(i, 0, 0, 0) for i in ids])   # 끄기
+            self._ui(lambda: self.led_test_status.config(
+                text="✓ LED 테스트 완료", fg="#2e7d32"))
+        except Exception as e:
+            if not cancel.is_set():
+                self._ui(lambda ex=e: self.led_test_status.config(
+                    text=f"✗ 실패: {ex}", fg="#c62828"))
+        finally:
+            if robot is not None:
+                try:
+                    robot.send_leds([(i, 0, 0, 0) for i in range(1, 19)])
+                except Exception:
+                    pass
+                try:
+                    robot.close()
+                except Exception:
+                    pass
+            self._motion_test_robot = None
+            self._led_test_running = False
+            if cancel.is_set():
+                self._ui(lambda: self.led_test_status.config(
+                    text="■ LED 테스트 중지됨", fg="#c62828"))
+            self._ui(lambda: self.led_test_btn.config(text="🌈  LED 테스트")
+                     if self.led_test_btn is not None else None)
 
     # ----------------- 카메라 -----------------
     def _build_camera_section(self) -> None:
