@@ -381,9 +381,10 @@ class App:
             pady=(0, 16))
         dlg.protocol("WM_DELETE_WINDOW", lambda: None)   # 임의 닫기 방지
         self.root.update_idletasks()
-        x = self.root.winfo_x() + (self.root.winfo_width() - 420) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - 180) // 2
-        dlg.geometry(f"420x180+{max(0, x)}+{max(0, y)}")
+        # 메인 윈도 중앙(멀티모니터 음수 좌표도 그대로 — 0으로 클램프 금지)
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - 420) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - 180) // 2
+        dlg.geometry(f"420x180+{int(x)}+{int(y)}")
         dlg.lift()
         try:
             dlg.grab_set()              # 메인 윈도 조작 잠금
