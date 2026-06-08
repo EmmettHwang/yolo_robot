@@ -315,20 +315,32 @@ class RecognitionView(ttk.Frame):
                 top_conf = conf; top_label = self.model.names[cid]
 
         now = time.time()
+        busy = bool(self.runner and self.runner.busy)
         if (top_label and top_conf >= CONF_THRESHOLD
                 and top_label != self._last_acted
+                and not busy                       # 반응 진행 중이면 새 트리거 차단
                 and now - self._last_trigger > TRIGGER_COOLDOWN):
             act = self.mapping.get(top_label)
             if act:
+                kind = act.get("sound_kind", snd.NONE)
+                val = act.get("sound_value", "")
                 # 사운드
-                if self.sound_on:
-                    kind = act.get("sound_kind", snd.NONE)
-                    if kind and kind != snd.NONE:
-                        self.player.play(kind, act.get("sound_value", ""))
-                # LED 페이드인→반짝→모션→페이드아웃→반짝
+                if self.sound_on and kind and kind != snd.NONE:
+                    self.player.play(kind, val)
+                # mp3면 그 길이만큼 동작 지속 (중지 전까지 안 끊음)
+                hold = None
+                if kind == snd.MP3 and val:
+                    try:
+                        import mp3_library
+                        d = mp3_library.read_meta(val).get("duration", 0)
+                        if d and d > 0:
+                            hold = float(d)
+                    except Exception:
+                        hold = None
+                # LED 페이드인→반짝→모션→(hold 지속)→페이드아웃→반짝
                 motion = act.get("motion")
                 if motion and self.runner:
-                    self.runner.action_with_led(int(motion))
+                    self.runner.action_with_led(int(motion), hold=hold)
                 self._last_acted = top_label
                 self._last_trigger = now
 
@@ -414,6 +426,10 @@ class RecognitionView(ttk.Frame):
     def _stop_motion(self):
         if self.runner:
             self.runner.stop_all()
+        try:
+            self.player.stop()       # 재생 중인 mp3도 함께 중지
+        except Exception:
+            pass
 
     def _open_control_panel(self):
         if not self.runner:
