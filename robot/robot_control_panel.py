@@ -45,7 +45,7 @@ class ControlPanel(tk.Toplevel):
     def _build(self):
         from scrollable import make_scrollable, fit_window
         # 내용이 한 화면에 다 들어오도록 크게(스크롤 없이). 화면보다 크면 자동 축소.
-        fit_window(self, 600, 920, parent=self.master)   # 메인 윈도 중앙
+        fit_window(self, 760, 1040, parent=self.master)   # 메인 윈도 중앙
         body = make_scrollable(self)
         # 전원
         pw = ttk.LabelFrame(body, text="  전원(토크)  ")

@@ -76,18 +76,21 @@ class App:
         self.root = tk.Tk()
         self.root.title(f"YOLO 기반 휴머노이드  ROBO COMMANDER  v{__version__}")
         self.root.minsize(1080, 640)
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        win_w = min(1180, sw)
+        x = (sw - win_w) // 2
+        # 지난번 종료한 가로 위치/너비는 기억(트리플 모니터)
         saved = self._load_win_geom()
         if saved:
-            # 지난번 종료 위치/크기 복원(트리플 모니터 등)
-            self.root.geometry(saved)
-        else:
-            # 첫 실행: 화면 세로를 꽉 채우도록(작업표시줄 고려해 약간 여유)
-            sw = self.root.winfo_screenwidth()
-            sh = self.root.winfo_screenheight()
-            win_w = min(1180, sw)
-            win_h = sh - 64
-            x = max(0, (sw - win_w) // 2)
-            self.root.geometry(f"{win_w}x{win_h}+{x}+0")
+            import re
+            m = re.match(r"(\d+)x(\d+)\+(-?\d+)\+(-?\d+)", saved)
+            if m:
+                win_w = int(m.group(1))
+                x = int(m.group(3))
+        # 세로는 항상 화면 위아래로 꽉 채움(작업표시줄만 약간 여유)
+        win_h = sh - 56
+        self.root.geometry(f"{win_w}x{win_h}+{int(x)}+0")
         self.root.configure(bg=BG)
         self._style()
 
