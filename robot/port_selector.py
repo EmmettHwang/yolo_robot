@@ -611,7 +611,7 @@ class PortSelector:
         top._photo = photo                      # 참조 유지(GC 방지)
 
         from scrollable import make_scrollable, fit_window
-        fit_window(top, img.width + 50, img.height + 90)
+        fit_window(top, img.width + 50, img.height + 90, parent=self.root)
         body = make_scrollable(top, bg="#1e1e1e")
         tk.Label(body, image=photo, bg="#1e1e1e").pack(padx=8, pady=8)
         tk.Button(body, text="닫기", width=12,

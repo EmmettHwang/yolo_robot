@@ -17,10 +17,11 @@ import tkinter as tk
 from tkinter import ttk
 
 
-def fit_window(win, width, height, margin=90, center=True):
+def fit_window(win, width, height, margin=90, center=True, parent=None):
     """창 크기를 화면 안에 들어오도록 제한해서 설정한다.
 
     내용이 화면보다 커도 스크롤로 볼 수 있으므로, 화면 밖으로 넘치지 않게 한다.
+    parent 가 주어지면 그 창(부모/메인 윈도)의 중앙에 배치한다.
     """
     try:
         sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
@@ -29,12 +30,49 @@ def fit_window(win, width, height, margin=90, center=True):
     w = min(width, sw - margin)
     h = min(height, sh - margin)
     if center:
+        # 기본: 화면 중앙
         x = max(0, (sw - w) // 2)
         y = max(0, (sh - h) // 2 - 10)
+        # 부모가 있으면 부모(메인 윈도) 중앙으로
+        if parent is not None:
+            try:
+                parent.update_idletasks()
+                px, py = parent.winfo_rootx(), parent.winfo_rooty()
+                pw, ph = parent.winfo_width(), parent.winfo_height()
+                if pw > 1 and ph > 1:
+                    x = px + (pw - w) // 2
+                    y = py + (ph - h) // 2
+            except Exception:
+                pass
+        # 화면 밖으로 나가지 않게 보정
+        x = max(0, min(x, sw - w))
+        y = max(0, min(y, sh - h))
         win.geometry(f"{w}x{h}+{x}+{y}")
     else:
         win.geometry(f"{w}x{h}")
     return w, h
+
+
+def center_over(win, parent, margin=90):
+    """이미 크기가 정해진 창을 부모(메인 윈도) 중앙에 위치시킨다."""
+    try:
+        win.update_idletasks()
+        w = win.winfo_width() or win.winfo_reqwidth()
+        h = win.winfo_height() or win.winfo_reqheight()
+        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+        if parent is not None:
+            parent.update_idletasks()
+            px, py = parent.winfo_rootx(), parent.winfo_rooty()
+            pw, ph = parent.winfo_width(), parent.winfo_height()
+            x = px + (pw - w) // 2
+            y = py + (ph - h) // 2
+        else:
+            x, y = (sw - w) // 2, (sh - h) // 2
+        x = max(0, min(x, sw - w))
+        y = max(0, min(y, sh - h))
+        win.geometry(f"+{x}+{y}")
+    except Exception:
+        pass
 
 
 def make_scrollable(parent, bg=None):

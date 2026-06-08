@@ -619,7 +619,7 @@ class TrainTab(ttk.Frame):
         top.title("학습 결과 — 성능 확인")
         top.configure(bg=BG)
         from scrollable import make_scrollable, fit_window
-        fit_window(top, 820, 760)
+        fit_window(top, 820, 760, parent=self.winfo_toplevel())  # 스튜디오 중앙
         body = make_scrollable(top, bg=BG)
 
         tk.Label(body, text="📊 학습 결과", font=("Malgun Gothic", 15, "bold"),
@@ -791,6 +791,8 @@ class TrainTab(ttk.Frame):
         ent.bind("<Return>", lambda e: ok())
 
         dlg.update_idletasks()
+        from scrollable import center_over
+        center_over(dlg, self.winfo_toplevel())     # 스튜디오(메인) 중앙
         try:
             dlg.grab_set(); ent.focus_set()
             dlg.lift(); dlg.attributes("-topmost", True)

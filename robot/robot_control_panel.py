@@ -43,7 +43,7 @@ class ControlPanel(tk.Toplevel):
 
     def _build(self):
         from scrollable import make_scrollable, fit_window
-        fit_window(self, 470, 720)
+        fit_window(self, 470, 720, parent=self.master)   # 메인 윈도 중앙
         body = make_scrollable(self)
         # 전원
         pw = ttk.LabelFrame(body, text="  전원(토크)  ")
@@ -132,6 +132,10 @@ class ControlPanel(tk.Toplevel):
                  "명시 없음 → 예제값 ±100 기준 보수적 제한). 작은 값부터 시험하세요.",
                  font=("Malgun Gothic", 8), fg="#999",
                  wraplength=420, justify="left").pack(pady=(0, 10), padx=10)
+        tk.Button(body, text="닫기", width=14, bg="#607d8b", fg="white",
+                  relief="flat", cursor="hand2",
+                  font=("Malgun Gothic", 11, "bold"),
+                  command=self.destroy).pack(pady=(0, 14))
         self._upd_swatch()
 
     # ---------- 실시간 전송 ----------
