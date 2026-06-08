@@ -39,6 +39,7 @@ import os
 import re
 import time
 import threading
+import subprocess
 import configparser
 from typing import Callable, List, Optional, Tuple
 
@@ -222,7 +223,7 @@ class PortSelector:
         baudrate: int = 115200,
         config_file: Optional[str] = None,
         width: int = 600,
-        height: int = 900,
+        height: int = 980,
     ):
         self.title = title
         self.baudrate = baudrate
@@ -259,6 +260,7 @@ class PortSelector:
         # ---- 위젯 핸들 ----
         self.root: Optional[tk.Tk] = None
         self.port_combo: Optional[ttk.Combobox] = None
+        self.bt_status: Optional[tk.Label] = None
         self.motion_spin: Optional[tk.Spinbox] = None
         self.motion_test_btn: Optional[ttk.Button] = None
         self.motion_test_status: Optional[tk.Label] = None
@@ -434,6 +436,36 @@ class PortSelector:
             self.root, text=f"  시리얼 포트 ({self.baudrate} bps)  ", padding=10
         )
         frame.pack(fill="x", padx=15, pady=(4, 6))
+
+        # --- 블루투스 페어링 안내/도우미 ---
+        bt = tk.Frame(frame, bg="#e8f0fe"); bt.pack(fill="x", pady=(0, 8))
+        tk.Label(
+            bt, bg="#e8f0fe", fg="#1565c0", justify="left",
+            font=("Malgun Gothic", 9),
+            text=("ℹ 휴머노이드(FB153)는 처음 한 번만 Windows에서 블루투스 페어링하면 됩니다.\n"
+                  "   1) 아래 '블루투스 설정 열기' → '장치 추가' → 블루투스\n"
+                  "   2) 'FB153'(또는 '알 수 없는 장치') 선택 →  PIN 입력:  0000\n"
+                  "   3) 페어링되면 '페어링 후 다시 검색'을 누르세요 (자동으로 포트를 잡습니다)"),
+        ).pack(anchor="w", padx=8, pady=(6, 4))
+        btn_bt = tk.Frame(bt, bg="#e8f0fe"); btn_bt.pack(anchor="w", padx=8,
+                                                         pady=(0, 6))
+        tk.Button(btn_bt, text="🔵  블루투스 설정 열기", bg="#1565c0", fg="white",
+                  activebackground="#0d47a1", activeforeground="white",
+                  relief="flat", cursor="hand2",
+                  font=("Malgun Gothic", 9, "bold"),
+                  command=self._open_bt_settings).pack(side="left", ipadx=6,
+                                                       ipady=2)
+        tk.Button(btn_bt, text="↻  페어링 후 다시 검색", bg="#2e7d32", fg="white",
+                  activebackground="#1b5e20", activeforeground="white",
+                  relief="flat", cursor="hand2",
+                  font=("Malgun Gothic", 9, "bold"),
+                  command=self._rescan_after_pairing).pack(side="left",
+                                                           padx=(8, 0),
+                                                           ipadx=6, ipady=2)
+        self.bt_status = tk.Label(bt, bg="#e8f0fe", fg="#555",
+                                  font=("Malgun Gothic", 9), justify="left")
+        self.bt_status.pack(anchor="w", padx=8, pady=(0, 6))
+
         row = tk.Frame(frame); row.pack(fill="x")
         self.port_combo = ttk.Combobox(row, state="readonly")
         self.port_combo.pack(side="left", fill="x", expand=True)
@@ -483,6 +515,63 @@ class PortSelector:
             justify="left", wraplength=360,
         )
         self.led_test_status.pack(anchor="w", pady=(2, 0))
+
+    def _open_bt_settings(self) -> None:
+        """Windows 블루투스 설정 화면을 연다. (장치 추가는 사용자가 진행)"""
+        opened = False
+        for cmd in (["explorer.exe", "ms-settings:bluetooth"],
+                    ["cmd", "/c", "start", "", "ms-settings:bluetooth"]):
+            try:
+                subprocess.Popen(cmd)
+                opened = True
+                break
+            except Exception:
+                continue
+        if not opened:
+            try:
+                os.startfile("ms-settings:bluetooth")   # 최후의 수단
+                opened = True
+            except Exception:
+                opened = False
+        if self.bt_status is not None:
+            if opened:
+                self.bt_status.config(
+                    text="→ '장치 추가'에서 FB153 선택, PIN 0000 입력 후 "
+                         "'페어링 후 다시 검색'을 누르세요.", fg="#1565c0")
+            else:
+                self.bt_status.config(
+                    text="블루투스 설정을 열지 못했습니다. "
+                         "직접 설정 > Bluetooth 및 장치에서 추가하세요.",
+                    fg="#c62828")
+
+    def _find_robot_port(self) -> Optional[str]:
+        """페어링된 포트 중 FB153(휴머노이드)으로 보이는 포트 device 반환."""
+        for p in self._ports:
+            addr = _bt_remote_address(p.hwid)
+            if addr and addr != "000000000000":
+                name = (bt_device_name(addr) or "").upper()
+                if "FB153" in name:
+                    return p.device
+        return None
+
+    def _rescan_after_pairing(self) -> None:
+        """페어링이 끝난 뒤 포트를 다시 검색하고 로봇을 자동으로 잡았는지 알린다."""
+        self._refresh_ports()
+        robot_port = self._find_robot_port()
+        if self.bt_status is None:
+            return
+        if robot_port:
+            self.bt_status.config(
+                text=f"✓ 휴머노이드(FB153) 발견 — {robot_port} 자동 선택됨. "
+                     "'동작 테스트'로 확인해 보세요.", fg="#2e7d32")
+        elif self._ports:
+            self.bt_status.config(
+                text="포트는 검색됐지만 FB153은 아직 안 보입니다. "
+                     "페어링이 끝났는지 확인 후 다시 누르세요.", fg="#ef6c00")
+        else:
+            self.bt_status.config(
+                text="검색된 포트가 없습니다. 페어링을 먼저 완료하세요 (PIN 0000).",
+                fg="#c62828")
 
     def _load_motormap(self, target_h: int):
         """assets/motorMap.png 을 target_h 높이로 로드. 실패 시 None."""
