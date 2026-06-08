@@ -136,23 +136,25 @@ class RecognitionView(ttk.Frame):
         tk.Checkbutton(ctrl, text="자동 시작", variable=self.auto_start,
                        font=("Malgun Gothic", 9)).pack(side="left", padx=(8, 0))
 
-        # --- 둘째 줄: 신뢰도 임계값 / 최대 인식 개수 ---
-        ctrl2 = tk.Frame(panel); ctrl2.pack(fill="x", padx=8, pady=(0, 4))
-        tk.Label(ctrl2, text="신뢰도≥", font=("Malgun Gothic", 9)).pack(
-            side="left")
+        # --- 둘째 줄: 신뢰도 임계값 / 최대 인식 개수 (위아래로 크게) ---
+        ctrl2 = tk.Frame(panel); ctrl2.pack(fill="x", padx=8, pady=(2, 8))
+        tk.Label(ctrl2, text="신뢰도≥", font=("Malgun Gothic", 11, "bold")).pack(
+            side="left", pady=8)
         self._conf_var = tk.DoubleVar(master=self, value=self.conf_threshold)
         self._conf_lbl = tk.Label(ctrl2, text=f"{self.conf_threshold:.2f}",
-                                  width=4, font=("Consolas", 9))
+                                  width=5, font=("Consolas", 13, "bold"),
+                                  fg="#1565c0")
 
         def _on_conf(v):
             self.conf_threshold = float(v)
             self._conf_lbl.config(text=f"{self.conf_threshold:.2f}")
         tk.Scale(ctrl2, from_=0.10, to=0.95, resolution=0.05,
                  orient="horizontal", variable=self._conf_var, showvalue=False,
-                 length=160, command=_on_conf).pack(side="left")
-        self._conf_lbl.pack(side="left", padx=(2, 12))
-        tk.Label(ctrl2, text="최대 개수", font=("Malgun Gothic", 9)).pack(
-            side="left")
+                 length=240, width=26, sliderlength=34,
+                 command=_on_conf).pack(side="left", pady=4)
+        self._conf_lbl.pack(side="left", padx=(4, 16))
+        tk.Label(ctrl2, text="최대 개수", font=("Malgun Gothic", 11, "bold")).pack(
+            side="left", pady=8)
         self._maxdet_var = tk.IntVar(master=self, value=self.max_det)
 
         def _on_maxdet(*_):
@@ -162,7 +164,9 @@ class RecognitionView(ttk.Frame):
                 pass
         self._maxdet_var.trace_add("write", _on_maxdet)
         tk.Spinbox(ctrl2, from_=1, to=50, width=4,
-                   textvariable=self._maxdet_var).pack(side="left", padx=(4, 0))
+                   font=("Consolas", 15, "bold"),
+                   textvariable=self._maxdet_var).pack(side="left", padx=(6, 0),
+                                                       ipady=4)
 
         # --- 본문: 조이스틱 | 디스플레이 | 그리드 ---
         body = tk.Frame(panel); body.pack(fill="x", padx=8, pady=(0, 8))

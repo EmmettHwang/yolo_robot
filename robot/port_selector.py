@@ -910,14 +910,13 @@ class PortSelector:
             label = f"{p.device} - {p.description}"
             addr = _bt_remote_address(p.hwid)
             if addr and addr != "000000000000":
-                # 페어링된 발신 포트 → 실제 기기명 표시(예: FB153 v1.0.0)
-                name = bt_device_name(addr)
-                if name:
-                    label += f"   ★ {name}"
-                else:
-                    label += f"   ★ 페어링됨({addr[-4:-2]}:{addr[-2:]})"
-                if robot_idx is None:
-                    robot_idx = len(display)
+                # 로봇(FB153)만 표시. 그 외 BT 기기는 표시하지 않음.
+                name = (bt_device_name(addr) or "").upper()
+                if "FB153" in name:
+                    short = f"{addr[-4:-2]}:{addr[-2:]}"
+                    label += f"   ★ 휴머노이드 (MAC {short})"
+                    if robot_idx is None:
+                        robot_idx = len(display)
             display.append(label)
         self.port_combo["values"] = display
         if not display:
