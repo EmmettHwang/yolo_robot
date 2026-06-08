@@ -41,8 +41,8 @@ except Exception:
     _HAS_PIL = False
 
 from paths import (
-    DATASET, IMG_DIR, LBL_DIR, CLASSES_TXT, DATA_YAML, MODELS_DIR,
-    ACTIVE_MODEL, BASE_WEIGHTS, YOLO_DIR, RUNS_DIR, BEST_WEIGHTS, CONFIG_INI,
+    BASE, DATASET, IMG_DIR, LBL_DIR, CLASSES_TXT, DATA_YAML, MODELS_DIR,
+    ACTIVE_MODEL, BASE_WEIGHTS, RUNS_DIR, BEST_WEIGHTS, CONFIG_INI,
 )
 
 PY = sys.executable
@@ -463,15 +463,20 @@ class TrainWindow:
                          daemon=True).start()
 
     def _worker(self, epochs, imgsz):
-        cmd = [PY, os.path.join(YOLO_DIR, "train.py"),
-               "--img", str(imgsz), "--batch", "4", "--epochs", str(epochs),
-               "--data", DATA_YAML, "--weights", BASE_WEIGHTS,
-               "--project", RUNS_DIR, "--name", "custom", "--exist-ok",
-               "--device", "cpu", "--workers", "0"]
-        self._append("학습 시작:\n  " + " ".join(cmd) + "\n\n")
+        # ultralytics 로 학습 (yolov5 클론 불필요). 로그 스트리밍 위해 서브프로세스로.
+        code = (
+            "from ultralytics import YOLO; "
+            "m = YOLO(r'%s'); "
+            "m.train(data=r'%s', epochs=%d, imgsz=%d, batch=4, "
+            "project=r'%s', name='custom', exist_ok=True, "
+            "device='cpu', workers=0)"
+            % (BASE_WEIGHTS, DATA_YAML, epochs, imgsz, RUNS_DIR)
+        )
+        cmd = [PY, "-c", code]
+        self._append("학습 시작(ultralytics):\n  " + code + "\n\n")
         try:
             self.proc = subprocess.Popen(
-                cmd, cwd=YOLO_DIR, stdout=subprocess.PIPE,
+                cmd, cwd=BASE, stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                 errors="replace", bufsize=1)
             for line in self.proc.stdout:

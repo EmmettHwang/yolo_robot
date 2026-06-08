@@ -308,9 +308,7 @@ class RecognitionView(ttk.Frame):
                 break
 
             if self.yolo_on and self._fcount % INFER_EVERY == 0:
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                res = self.model(rgb, size=INFER_SIZE)
-                dets = res.xyxy[0].cpu().numpy()
+                dets = yolo_mod.infer(self.model, frame, INFER_SIZE)
                 with self._lock:
                     self._dets = dets
                 self._handle_triggers(dets)

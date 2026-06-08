@@ -3,14 +3,14 @@
 # ================================================================
 #
 # 설치 순서:
-#   1) git clone https://github.com/ultralytics/yolov5.git
-#   2) pip install -r yolov5/requirements.txt   ← YOLOv5 본체 의존성
-#   3) pip install -r requirements.txt          ← 본 파일 (로봇 제어 추가분)
+#   pip install -r requirements.txt
+#   (yolov5 git clone 불필요 — ultralytics 패키지로 v5/v8/v11 모두 사용)
 #
 # Python 3.11 권장
 # ================================================================
 
-# --- YOLOv5 추론용 ---
+# --- 객체 탐지/학습 (ultralytics: YOLOv5/v8/v11 통합) ---
+ultralytics>=8.4.0
 torch>=2.0.0
 torchvision>=0.15.0
 opencv-python>=4.8.0
