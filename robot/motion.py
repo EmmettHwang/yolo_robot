@@ -21,6 +21,7 @@ from motion_table import (
     SAFE_SIT, SAFE_UP, POWER_OFF_HOLD,
 )
 from motor_map import ALL_IDS
+import sound
 
 # 인식 반응 LED 연출 기본값
 REACTION_COLOR = (0, 150, 255)      # 페이드 색 (시안)
@@ -41,6 +42,7 @@ class MotionRunner:
         self._stop = threading.Event()
         self._cancel_action = threading.Event()  # 동작 중지 버튼 → 반응 즉시 종료
         self._busy = False                       # 반응(효과) 진행 중
+        self.effects_on = True                   # 시작/종료 효과음 on/off
         self._disconnected = False
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
@@ -267,6 +269,8 @@ class MotionRunner:
             self._leds([(i, r, g, b) for i in ids])
             if self._wait(0.05):
                 return
+            if self.effects_on:
+                sound.player.play_effect(sound.FX_START)   # 동작 시작 효과음
             if self.robot:
                 self.robot.send_motion(motion)
             # 동작 유지 (mp3 길이만큼; 중지 전까지 끊지 않음)
@@ -280,9 +284,11 @@ class MotionRunner:
                     return
                 if self._wait(0.045):
                     return
-            # 마지막 반짝
+            # 마지막 반짝 + 동작 종료 효과음
             self._leds([(i, 255, 255, 255) for i in ids])
             self._wait(0.12)
+            if self.effects_on:
+                sound.player.play_effect(sound.FX_END)
         finally:
             # 끝/중지 시 LED 끄기
             try:

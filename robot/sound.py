@@ -10,7 +10,10 @@ sound.py
 모든 재생은 비동기(별도 스레드)라 UI/제어 루프를 막지 않는다.
 """
 
+import os
 import threading
+
+from paths import SOUNDS_DIR
 
 try:
     import pygame
@@ -37,6 +40,7 @@ class SoundPlayer:
     def __init__(self):
         self._mixer_ready = False
         self._lock = threading.Lock()
+        self._fx_cache = {}        # 효과음 Sound 캐시
 
     def _ensure_mixer(self) -> bool:
         if self._mixer_ready or not _HAS_PYGAME:
@@ -88,6 +92,35 @@ class SoundPlayer:
             except Exception:
                 pass
 
+    # ---------- 효과음 (assets/sounds/<name>.wav) ----------
+    def play_effect(self, name: str) -> None:
+        """캡처/시작/종료 등 짧은 효과음 재생. (mp3 음악과 별도 채널)"""
+        if not name:
+            return
+        threading.Thread(target=self._play_wav, args=(name,),
+                         daemon=True).start()
+
+    def _play_wav(self, name: str) -> None:
+        if not self._ensure_mixer():
+            return
+        path = os.path.join(SOUNDS_DIR, name + ".wav")
+        if not os.path.exists(path):
+            return
+        try:
+            snd = self._fx_cache.get(name)
+            if snd is None:
+                snd = pygame.mixer.Sound(path)
+                self._fx_cache[name] = snd
+            snd.play()
+        except Exception as e:
+            print(f"[sound] 효과음 실패({name}): {e}")
+
 
 # 공용 인스턴스
 player = SoundPlayer()
+
+# 효과음 이름 상수
+FX_CAPTURE = "capture"
+FX_START = "start"
+FX_END = "end"
+FX_DETECT = "detect"

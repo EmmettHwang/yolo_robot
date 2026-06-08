@@ -44,6 +44,7 @@ from paths import (
     BASE, DATASET, IMG_DIR, LBL_DIR, CLASSES_TXT, DATA_YAML, MODELS_DIR,
     ACTIVE_MODEL, BASE_WEIGHTS, RUNS_DIR, BEST_WEIGHTS, CONFIG_INI,
 )
+import sound
 
 PY = sys.executable
 _FONT = ("Malgun Gothic", 11)
@@ -321,6 +322,7 @@ class DataCollector:
         cv2.imwrite(os.path.join(IMG_DIR, stem + ".jpg"), img)
         with open(os.path.join(LBL_DIR, stem + ".txt"), "w") as f:
             f.write(f"{cls_id} 0.5 0.5 1.0 1.0\n")
+        sound.player.play_effect(sound.FX_CAPTURE)   # 캡처음
         self._update_count(); self._refresh_thumbs()
 
     def _toggle_continuous(self):

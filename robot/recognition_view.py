@@ -236,6 +236,7 @@ class RecognitionView(ttk.Frame):
 
         self.mapping = object_actions.load_actions()
         self.runner = MotionRunner(self.robot, on_disconnect=self._on_disc)
+        self.runner.effects_on = self.sound_on
         self._disconnected = False
         self._last_acted = ""
         self._fcount = 0
@@ -464,6 +465,8 @@ class RecognitionView(ttk.Frame):
         self.sound_on = not self.sound_on
         self.sound_btn.config(
             text=f"사운드: {'ON' if self.sound_on else 'OFF'}")
+        if self.runner:
+            self.runner.effects_on = self.sound_on
 
     def _reload_mapping(self):
         self.mapping = object_actions.load_actions()

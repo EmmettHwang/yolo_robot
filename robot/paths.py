@@ -35,7 +35,7 @@ BEST_WEIGHTS = os.path.join(RUNS_DIR, "custom", "weights", "best.pt")
 
 # 리소스
 ASSETS = os.path.join(BASE, "assets")
-SOUNDS_DIR = os.path.join(ASSETS, "sounds")
+SOUNDS_DIR = os.path.join(ASSETS, "sounds")   # (예약) 효과음 파일용
 MP3_DIR = os.path.join(ASSETS, "mp3")
 # 이미지 → ./image, PDF/프로토콜 → ./protocol
 IMAGE_DIR = os.path.join(BASE, "image")
