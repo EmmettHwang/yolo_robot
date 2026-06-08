@@ -84,6 +84,7 @@ class App:
         self._showcase_count = 0
         self._dev_proc = None
         self._prev_tab = None
+        self._wait_dlg = None
 
         self._header()
 
@@ -249,13 +250,56 @@ class App:
                                fg="#ef6c00")
         self._dev_proc = subprocess.Popen(
             [PY, os.path.join(BASE, "port_selector.py")], cwd=BASE)
+        self._show_wait_dialog()        # 메인 윈도 잠금 + 안내
         self._watch_device_proc()
+
+    def _show_wait_dialog(self):
+        if self._wait_dlg is not None:
+            return
+        dlg = tk.Toplevel(self.root)
+        dlg.title("장치 및 로봇 설정 진행 중")
+        dlg.configure(bg="white")
+        dlg.resizable(False, False)
+        dlg.transient(self.root)
+        tk.Label(dlg, text="🔧  장치 및 로봇 설정",
+                 font=("Malgun Gothic", 14, "bold"), bg="white").pack(
+            pady=(20, 6), padx=24)
+        tk.Label(dlg, text="별도 설정 창에서 포트·카메라·마이크를 확인/테스트하세요.\n"
+                 "설정을 마치고 그 창을 닫으면 자동으로 계속됩니다.",
+                 font=("Malgun Gothic", 10), fg="#555", bg="white",
+                 justify="center").pack(padx=24)
+        pb = ttk.Progressbar(dlg, mode="indeterminate", length=320)
+        pb.pack(pady=16); pb.start(12)
+        tk.Label(dlg, text="⏳ 설정 창을 기다리는 중... (이 창은 잠금 상태)",
+                 font=("Malgun Gothic", 9), fg="#ef6c00", bg="white").pack(
+            pady=(0, 16))
+        dlg.protocol("WM_DELETE_WINDOW", lambda: None)   # 임의 닫기 방지
+        self.root.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - 420) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 180) // 2
+        dlg.geometry(f"420x180+{max(0, x)}+{max(0, y)}")
+        dlg.lift()
+        try:
+            dlg.grab_set()              # 메인 윈도 조작 잠금
+        except Exception:
+            pass
+        self._wait_dlg = dlg
+
+    def _hide_wait_dialog(self):
+        if self._wait_dlg is not None:
+            try:
+                self._wait_dlg.grab_release()
+                self._wait_dlg.destroy()
+            except Exception:
+                pass
+            self._wait_dlg = None
 
     def _watch_device_proc(self):
         if self._dev_proc is not None and self._dev_proc.poll() is None:
             self.root.after(500, self._watch_device_proc)
             return
-        # 설정창이 닫힘 → 재검증, 정상이면 버튼 애니메이션 후 다음 탭
+        # 설정창이 닫힘 → 잠금 해제, 재검증, 정상이면 버튼 애니메이션 후 다음 탭
+        self._hide_wait_dialog()
         if self._check_devices():
             self.root.after(
                 500, lambda: self._animate_press(
@@ -384,6 +428,7 @@ class App:
         pdf_viewer.open_manual(self.root)
 
     def _on_close(self):
+        self._hide_wait_dialog()
         try:
             self.rec_view.on_close()
         except Exception:

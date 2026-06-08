@@ -27,7 +27,7 @@ MOTION_NAMES = {
     30: "Zap", 31: "Left Hook", 32: "Left Upper", 33: "Strait",
     34: "Right Hook", 35: "Right Upper", 36: "One-Two",
     37: "Fight Getup F", 38: "Fight Getup B",
-    55: "Grip(잡기)", 56: "Laydown(눕기)",
+    55: "Grip(잡기)", 56: "Laydown(놓기)",
     60: "Safe Sit", 61: "Safe Up",
     63: "오늘부터우리는-여자친구", 65: "블락비", 67: "트와이스-걸그룹",
     68: "Swing Head", 69: "Look Left", 70: "Look Right",
