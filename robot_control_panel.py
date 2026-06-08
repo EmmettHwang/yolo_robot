@@ -26,12 +26,14 @@ class ControlPanel(tk.Toplevel):
         pw.pack(fill="x", padx=10, pady=(10, 6))
         tk.Button(pw, text="전원 ON", bg="#28a745", fg="white", relief="flat",
                   width=12, cursor="hand2",
-                  command=lambda: self.runner.power(True)).pack(
+                  command=lambda: self.runner.safe_power(True)).pack(
             side="left", padx=8, pady=8)
         tk.Button(pw, text="전원 OFF", bg="#c62828", fg="white", relief="flat",
                   width=12, cursor="hand2",
-                  command=lambda: self.runner.power(False)).pack(
+                  command=lambda: self.runner.safe_power(False)).pack(
             side="left", padx=8)
+        tk.Label(pw, text="ON: 전원→일어서기 / OFF: 앉기→7초→전원끔",
+                 font=("Malgun Gothic", 8), fg="#777").pack(side="left", padx=6)
 
         # LED
         led = ttk.LabelFrame(self, text="  LED 제어  ")

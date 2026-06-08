@@ -45,6 +45,11 @@ SEQUENCE_DELAY_MS = 200             # 동작 사이 딜레이
 # 기본 자세
 READY_MOTION = 1
 
+# 안전 전원 시퀀스
+SAFE_SIT = 60          # 전원 끄기 전 앉기
+SAFE_UP = 61           # 전원 켠 뒤 일어서기
+POWER_OFF_HOLD = 7.0   # Safe Sit 후 전원 끄기까지 대기(초)
+
 
 def motion_name(idx: int) -> str:
     return MOTION_NAMES.get(idx, f"Motion {idx}")

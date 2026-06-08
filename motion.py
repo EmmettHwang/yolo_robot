@@ -18,6 +18,7 @@ import threading
 from robot_controller import HumanoidRobot, MotionSequencer  # noqa: F401  (재노출)
 from motion_table import (
     FORWARD_SEQUENCE, BACKWARD_SEQUENCE, SEQUENCE_DELAY_MS, READY_MOTION,
+    SAFE_SIT, SAFE_UP, POWER_OFF_HOLD,
 )
 from motor_map import ALL_IDS
 
@@ -59,6 +60,10 @@ class MotionRunner:
 
     def power(self, on: bool) -> None:
         self._enqueue(("pwr", bool(on)))
+
+    def safe_power(self, on: bool) -> None:
+        """안전 전원: 끄기=Safe Sit→7초→OFF, 켜기=ON→Safe Up."""
+        self._enqueue(("safepwr", bool(on)))
 
     def action_with_led(self, motion: int, color=None, hold=None) -> None:
         """인식 반응: LED 페이드인→반짝→모션→페이드아웃→반짝."""
@@ -115,6 +120,9 @@ class MotionRunner:
         elif kind == "effect":
             self._run_effect(payload)
             ok = True
+        elif kind == "safepwr":
+            self._run_safe_power(payload)
+            ok = True
         else:
             ok = True
         if not ok:
@@ -134,6 +142,26 @@ class MotionRunner:
         if not ok:
             self._mark_disc()
         return ok
+
+    def _run_safe_power(self, on: bool) -> None:
+        """켜기: 전원 ON → Safe Up / 끄기: Safe Sit → 7초 대기 → 전원 OFF."""
+        if not self.robot:
+            self._mark_disc()
+            return
+        if on:
+            if not self.robot.power(True):
+                self._mark_disc(); return
+            if self._stop.wait(0.3):
+                return
+            if not self.robot.send_motion(SAFE_UP):     # 61 일어서기
+                self._mark_disc()
+        else:
+            if not self.robot.send_motion(SAFE_SIT):    # 60 앉기
+                self._mark_disc(); return
+            if self._stop.wait(POWER_OFF_HOLD):         # 7초(중지 가능)
+                return
+            if not self.robot.power(False):
+                self._mark_disc()
 
     def _run_effect(self, payload) -> None:
         """LED 페이드인 → 반짝 → 모션 → (유지) → 페이드아웃 → 반짝 → 끄기."""
