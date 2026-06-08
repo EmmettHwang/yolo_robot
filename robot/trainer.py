@@ -71,6 +71,30 @@ def save_classes(classes: list) -> None:
         f.write("\n".join(classes))
 
 
+def _imwrite(path: str, img) -> bool:
+    """Windows에서 한글/유니코드 경로 cv2.imwrite 실패를 우회해 저장."""
+    try:
+        ext = os.path.splitext(path)[1] or ".jpg"
+        ok, buf = cv2.imencode(ext, img)
+        if not ok:
+            return False
+        with open(path, "wb") as f:
+            f.write(buf.tobytes())
+        return True
+    except Exception:
+        return False
+
+
+def imread_unicode(path):
+    """유니코드 경로 안전 이미지 읽기 (썸네일/검증용)."""
+    import numpy as np
+    try:
+        data = np.fromfile(path, dtype=np.uint8)
+        return cv2.imdecode(data, cv2.IMREAD_COLOR)
+    except Exception:
+        return None
+
+
 def _class_of(filename: str) -> str:
     """'cls_0001.jpg' → 'cls' (마지막 _숫자 만 분리)."""
     stem = os.path.splitext(filename)[0]
@@ -319,7 +343,9 @@ class DataCollector:
         stem = f"{cls}_{n:04d}"
         size = int(self.size_var.get())
         img = cv2.resize(self.last_frame, (size, size))
-        cv2.imwrite(os.path.join(IMG_DIR, stem + ".jpg"), img)
+        if not _imwrite(os.path.join(IMG_DIR, stem + ".jpg"), img):
+            messagebox.showerror("저장 실패", "이미지 저장에 실패했습니다.")
+            return
         with open(os.path.join(LBL_DIR, stem + ".txt"), "w") as f:
             f.write(f"{cls_id} 0.5 0.5 1.0 1.0\n")
         sound.player.play_effect(sound.FX_CAPTURE)   # 캡처음
