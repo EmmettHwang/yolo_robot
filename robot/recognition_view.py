@@ -112,6 +112,7 @@ class RecognitionView(ttk.Frame):
         self._frame = None
         self._dets = np.empty((0, 6))
         self._disconnected = False
+        self._disc_shown = False        # 끊김 알림 1회만
         self._worker = None
         self._after_id = None
         self._imgtk = None
@@ -327,6 +328,7 @@ class RecognitionView(ttk.Frame):
         self.runner = MotionRunner(self.robot, on_disconnect=self._on_disc)
         self.runner.effects_on = self.sound_on
         self._disconnected = False
+        self._disc_shown = False
         self._last_acted = ""
         self._fcount = 0
         self.running = True
@@ -471,10 +473,14 @@ class RecognitionView(ttk.Frame):
     # ============================================================
     def _schedule_render(self):
         self._render()
-        self._after_id = self.after(33, self._schedule_render)
+        if self.running:          # 정지(끊김 포함)되면 더 이상 예약하지 않음
+            self._after_id = self.after(33, self._schedule_render)
 
     def _render(self):
         if self._disconnected:
+            if self._disc_shown:          # 이미 한 번 알렸으면 무시
+                return
+            self._disc_shown = True
             self.stop()
             messagebox.showwarning(
                 "로봇 연결 끊김",
