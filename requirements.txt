@@ -1,0 +1,24 @@
+# ================================================================
+# YOLOv5 + 휴머노이드 로봇 제어 통합 시스템 - requirements.txt
+# ================================================================
+#
+# 설치 순서:
+#   1) git clone https://github.com/ultralytics/yolov5.git
+#   2) pip install -r yolov5/requirements.txt   ← YOLOv5 본체 의존성
+#   3) pip install -r requirements.txt          ← 본 파일 (로봇 제어 추가분)
+#
+# Python 3.11 권장
+# ================================================================
+
+# --- YOLOv5 추론용 ---
+torch>=2.0.0
+torchvision>=0.15.0
+opencv-python>=4.8.0
+numpy>=1.23.0
+pillow>=9.0.0
+
+# --- 로봇 시리얼 제어용 ---
+pyserial>=3.5
+
+# tkinter, configparser, threading, os, time 은 표준 라이브러리이므로 별도 설치 불필요.
+# (Linux에서 tkinter가 없을 경우: sudo apt install python3-tk)
