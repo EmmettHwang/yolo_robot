@@ -103,6 +103,7 @@ class App:
         self._wait_dlg = None
         self._train_proc = None
         self._train_before_mtime = 0
+        self._web_proc = None
         # 자동 진행 옵션 (체크박스)
         self.auto_dev = tk.BooleanVar(value=True)    # 설정 후 자동 이동
         self.auto_yolo = tk.BooleanVar(value=False)  # 모델 준비 후 자동 이동
@@ -162,6 +163,27 @@ class App:
                                      fg="#ef6c00")
             self._reload_model()
 
+    def _open_webview(self):
+        """로고 클릭 → kdt2025.com 을 웹뷰(별도 프로세스)로 열고 메인 윈도 잠금."""
+        if self._web_proc is not None and self._web_proc.poll() is None:
+            return
+        self._web_proc = subprocess.Popen(
+            [PY, os.path.join(ROBOT_DIR, "webview_window.py"),
+             "https://kdt2025.com", "KDT 2025"], cwd=BASE)
+        self._show_wait_dialog(
+            title="웹 페이지 보기",
+            heading="🌐  KDT 2025  (kdt2025.com)",
+            msg="웹 페이지를 웹뷰 창에서 보는 중입니다.\n"
+                "창을 닫으면 자동으로 계속됩니다.",
+            waiting="⏳ 웹 페이지 창을 기다리는 중... (이 창은 잠금 상태)")
+        self._watch_web_proc()
+
+    def _watch_web_proc(self):
+        if self._web_proc is not None and self._web_proc.poll() is None:
+            self.root.after(500, self._watch_web_proc)
+            return
+        self._hide_wait_dialog()
+
     def _style(self):
         st = ttk.Style()
         try:
@@ -186,8 +208,10 @@ class App:
             h = 46
             w = max(1, int(img.width * h / img.height))
             self._logo = ImageTk.PhotoImage(img.resize((w, h)))
-            tk.Label(header, image=self._logo, bg=HEADER_BG).pack(
-                side="right", padx=20)
+            logo_lbl = tk.Label(header, image=self._logo, bg=HEADER_BG,
+                                cursor="hand2")
+            logo_lbl.pack(side="right", padx=20)
+            logo_lbl.bind("<Button-1>", lambda e: self._open_webview())
         except Exception:
             tk.Label(header, text="MRT 라인코어 스마트",
                      font=("Malgun Gothic", 10), fg="#9fb3d8",
@@ -206,7 +230,7 @@ class App:
     # ---------- 탭: 포트/장치 ----------
     def _tab_devices(self, nb):
         f = ttk.Frame(nb)
-        tk.Label(f, text="① 포트 / 장치 확인", font=("Malgun Gothic", 16, "bold"),
+        tk.Label(f, text="① 로봇장치설정", font=("Malgun Gothic", 16, "bold"),
                  bg=BG).pack(pady=(26, 6))
         self.dev_status = tk.Label(f, text="확인 중...",
                                    font=("Malgun Gothic", 12, "bold"),
@@ -222,7 +246,7 @@ class App:
                   cursor="hand2", height=2, width=12,
                   command=self._check_devices).pack(side="left", padx=6)
         self.dev_next = tk.Button(
-            btns, text="다음 → 로봇 학습 ▶", font=("Malgun Gothic", 11, "bold"),
+            btns, text="다음 → 인공지능학습 ▶", font=("Malgun Gothic", 11, "bold"),
             bg=ACCENT, fg="white", relief="flat", cursor="hand2", height=2,
             width=18, command=lambda: self.nb.select(self.tab_train))
         self.dev_next.pack(side="left", padx=6)
@@ -234,7 +258,7 @@ class App:
     # ---------- 탭: 로봇 학습 ----------
     def _tab_training(self, nb):
         f = ttk.Frame(nb)
-        tk.Label(f, text="② 로봇 학습", font=("Malgun Gothic", 16, "bold"),
+        tk.Label(f, text="② 인공지능학습", font=("Malgun Gothic", 16, "bold"),
                  bg=BG).pack(pady=(26, 6))
 
         self.model_status = tk.Label(
@@ -268,13 +292,13 @@ class App:
                   relief="flat", cursor="hand2", height=2, width=24,
                   command=self._open_training).pack(side="left", padx=6)
         self.train_next = tk.Button(
-            btns, text="다음 → 인식 시작 ▶", font=("Malgun Gothic", 11, "bold"),
+            btns, text="다음 → 자율활동시작 ▶", font=("Malgun Gothic", 11, "bold"),
             bg="#9e9e9e", fg="white", relief="flat", height=2, width=18,
             state="disabled",
             command=lambda: self.nb.select(self.rec_view))
         self.train_next.pack(side="left", padx=6)
 
-        tk.Checkbutton(f, text="모델 준비되면 자동으로 인식 시작 단계로 이동",
+        tk.Checkbutton(f, text="모델 준비되면 자동으로 자율활동시작 단계로 이동",
                        variable=self.auto_yolo, bg=BG,
                        font=("Malgun Gothic", 9)).pack(pady=(6, 0))
         tk.Label(f, text="※ 학습은 CPU라 느립니다. 클래스당 20~50장, 에폭 10~30 권장.",
@@ -378,7 +402,7 @@ class App:
             else:
                 self.dev_status.config(
                     text=self.dev_status.cget("text")
-                    + "  ·  ‘다음 → 로봇 학습’을 누르세요", fg="#2e7d32")
+                    + "  ·  ‘다음 → 인공지능학습’을 누르세요", fg="#2e7d32")
 
     def _animate_press(self, btn, then):
         """버튼이 '눌리는' 애니메이션 후 then() 실행."""

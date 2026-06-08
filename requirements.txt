@@ -26,6 +26,7 @@ pygame>=2.6.0           # 동작 사운드 mp3 재생
 pyttsx3>=2.99           # 오프라인 TTS (Windows SAPI)
 mutagen>=1.47           # mp3 메타정보(제목/아티스트/길이) 읽기
 pymupdf>=1.27           # 매뉴얼 PDF 뷰어(렌더링/목차)
+pywebview>=5.0          # 로고 클릭 시 웹뷰(kdt2025.com) 모달 (Windows: Edge WebView2)
 
 # --- (선택) 카메라 실제 이름 표시 (Windows) ---
 # pygrabber
