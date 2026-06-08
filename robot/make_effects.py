@@ -139,9 +139,86 @@ def make_power_off():
     return _fade(sig)
 
 
+# ============================================================
+# 4) 다양한 로봇 보이스 (random 사운드용) — voice_01 ~ voice_08
+# ============================================================
+def _note(freq, dur, harm=0.3, tau=0.18, square=False):
+    n = int(SR * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    s = np.sin(2 * np.pi * freq * t)
+    if square:
+        s = np.sign(s) * 0.7
+    s += harm * np.sin(2 * np.pi * 2 * freq * t)
+    return s * _env_exp(n, tau)
+
+
+def _gap(ms):
+    return np.zeros(int(SR * ms / 1000))
+
+
+def make_voices():
+    rng = np.random.default_rng(42)
+    voices = {}
+
+    # 01: 상승 3음 삐빅삐 (밝은 인사)
+    voices["voice_01"] = np.concatenate([
+        _note(523, 0.10), _gap(20), _note(784, 0.10), _gap(20),
+        _note(1047, 0.16)])
+
+    # 02: 하강 워블 (시무룩)
+    s = _sweep(900, 300, 0.5) * (1 + 0.3 * np.sin(2 * np.pi * 18 *
+              np.linspace(0, 0.5, int(SR * 0.5))))
+    voices["voice_02"] = s * _env_exp(len(s), 0.3)
+
+    # 03: R2D2풍 랜덤 아르페지오 (수다)
+    seq = []
+    for _ in range(7):
+        f = float(rng.integers(400, 1500))
+        seq.append(_note(f, 0.07, harm=0.4, tau=0.08, square=True))
+        seq.append(_gap(15))
+    voices["voice_03"] = np.concatenate(seq)
+
+    # 04: 두 음 '부-입?' (질문하듯 끝 올림)
+    voices["voice_04"] = np.concatenate([
+        _note(330, 0.16), _gap(30),
+        (_sweep(500, 900, 0.22) * _env_exp(int(SR * 0.22), 0.18))])
+
+    # 05: 비브라토 치프 (귀엽게)
+    n = int(SR * 0.4); t = np.linspace(0, 0.4, n)
+    f = 700 + 120 * np.sin(2 * np.pi * 12 * t)
+    ph = 2 * np.pi * np.cumsum(f) / SR
+    voices["voice_05"] = np.sin(ph) * _env_exp(n, 0.25)
+
+    # 06: 빠른 트리플 클릭 + 톤 (놀람)
+    clk = []
+    for _ in range(3):
+        nc = int(SR * 0.03)
+        clk.append(rng.standard_normal(nc) * _env_exp(nc, 0.04))
+        clk.append(_gap(25))
+    voices["voice_06"] = np.concatenate(clk + [_note(880, 0.14)])
+
+    # 07: 와우(상승→하강) 스윕
+    up = _sweep(300, 1100, 0.22); dn = _sweep(1100, 400, 0.22)
+    s = np.concatenate([up, dn])
+    voices["voice_07"] = s * _env_exp(len(s), 0.3)
+
+    # 08: 통통 튀는 상승 글리산도
+    seq = []
+    base = 400
+    for k in range(5):
+        seq.append(_note(base * (1.18 ** k), 0.08, tau=0.07))
+        seq.append(_gap(10))
+    voices["voice_08"] = np.concatenate(seq)
+
+    for name, sig in voices.items():
+        _write(name, _fade(sig))
+
+
 if __name__ == "__main__":
     print("[make_effects] 효과음 생성:")
     _write("stop", make_stop())
     _write("power_on", make_power_on())
     _write("power_off", make_power_off())
+    print("[make_effects] 로봇 보이스(random용) 생성:")
+    make_voices()
     print("[make_effects] 완료.")

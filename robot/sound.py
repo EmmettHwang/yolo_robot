@@ -11,6 +11,7 @@ sound.py
 """
 
 import os
+import random
 import threading
 
 from paths import SOUNDS_DIR
@@ -31,9 +32,11 @@ except Exception:
 NONE = "none"
 MP3 = "mp3"
 TTS = "tts"
+RANDOM = "random"      # 다양한 로봇 효과음(voice_*.wav) 중 랜덤 재생
 
 # UI 콤보박스용 (값, 표시이름)
-KINDS = [(NONE, "음성 없음"), (MP3, "MP3 재생"), (TTS, "TTS(읽기)")]
+KINDS = [(NONE, "음성 없음"), (MP3, "MP3 재생"), (TTS, "TTS(읽기)"),
+         (RANDOM, "랜덤 로봇음")]
 
 
 class SoundPlayer:
@@ -41,6 +44,7 @@ class SoundPlayer:
         self._mixer_ready = False
         self._lock = threading.Lock()
         self._fx_cache = {}        # 효과음 Sound 캐시
+        self._voices = None        # 랜덤 로봇음 파일명 캐시
 
     def _ensure_mixer(self) -> bool:
         if self._mixer_ready or not _HAS_PYGAME:
@@ -53,14 +57,34 @@ class SoundPlayer:
         return self._mixer_ready
 
     def play(self, kind: str, value: str = "") -> None:
-        """kind=mp3 → value는 파일경로 / kind=tts → value는 읽을 텍스트."""
+        """kind=mp3 → value는 파일경로 / kind=tts → value는 읽을 텍스트 /
+        kind=random → 로봇 보이스(voice_*.wav) 중 랜덤."""
         if kind == MP3 and value:
             threading.Thread(target=self._play_mp3, args=(value,),
                              daemon=True).start()
         elif kind == TTS and value:
             threading.Thread(target=self._speak, args=(value,),
                              daemon=True).start()
+        elif kind == RANDOM:
+            self.play_random()
         # none → 아무것도 안 함
+
+    def _voice_names(self) -> list:
+        if self._voices is None:
+            try:
+                self._voices = [
+                    os.path.splitext(f)[0] for f in os.listdir(SOUNDS_DIR)
+                    if f.lower().startswith("voice_")
+                    and f.lower().endswith(".wav")]
+            except Exception:
+                self._voices = []
+        return self._voices
+
+    def play_random(self) -> None:
+        """다양한 로봇 효과음(voice_*.wav) 중 하나를 무작위로 재생."""
+        names = self._voice_names()
+        if names:
+            self.play_effect(random.choice(names))
 
     def _play_mp3(self, path: str) -> None:
         if not self._ensure_mixer():

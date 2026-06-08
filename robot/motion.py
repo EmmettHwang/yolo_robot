@@ -95,6 +95,18 @@ class MotionRunner:
             "hold": ACTION_LED_HOLD if hold is None else hold,
         }))
 
+    def action_sequence(self, steps, sound_on=True, color=None) -> None:
+        """인식 반응(서브 동작): steps 를 순서대로 실행.
+
+        steps = [{"motion": int|None, "hold": float|None,
+                  "sound_kind": str, "sound_value": str}, ...]
+        """
+        self._enqueue(("effect_seq", {
+            "steps": list(steps),
+            "sound_on": bool(sound_on),
+            "color": color or REACTION_COLOR,
+        }))
+
     def start_sequence(self, seq, delay_ms: int = None) -> None:
         with self._lock:
             self._seq = list(seq)
@@ -143,6 +155,9 @@ class MotionRunner:
             ok = bool(r.power(payload))
         elif kind == "effect":
             self._run_effect(payload)
+            ok = True
+        elif kind == "effect_seq":
+            self._run_effect_seq(payload)
             ok = True
         elif kind == "ready_led":
             self._run_ready_led()
@@ -327,6 +342,80 @@ class MotionRunner:
                 pass
             try:
                 # 정상 종료는 기본자세(1)로. 중지는 stop_all 의 ready_led 가 1 처리.
+                if self.robot and not cancelled:
+                    self.robot.send_motion(READY_MOTION)
+            except Exception:
+                pass
+            self._busy = False
+
+    def _run_effect_seq(self, payload) -> None:
+        """서브 동작 시퀀스: LED 페이드인 → (스텝마다 사운드+모션+hold) → 페이드아웃.
+
+        동작 중지(_cancel_action) 시 즉시 종료. 사운드는 sound_on 일 때만.
+        """
+        self._busy = True
+        self._cancel_action.clear()
+        ids = ALL_IDS
+        r, g, b = payload["color"]
+        steps = payload["steps"] or []
+        sound_on = payload["sound_on"]
+        STEP = 8
+        try:
+            # 페이드 인 (1회)
+            for k in range(1, STEP + 1):
+                f = k / STEP
+                if not self._leds([(i, int(r * f), int(g * f), int(b * f))
+                                   for i in ids]):
+                    return
+                if self._wait(0.04):
+                    return
+            for idx, st in enumerate(steps):
+                if self._cancel_action.is_set():
+                    return
+                motion = st.get("motion")
+                hold = st.get("hold")
+                hold = ACTION_LED_HOLD if not hold else float(hold)
+                kind = st.get("sound_kind", sound.NONE)
+                val = st.get("sound_value", "")
+                # 스텝 구분 반짝
+                self._leds([(i, 255, 255, 255) for i in ids])
+                if self._wait(0.10):
+                    return
+                self._leds([(i, r, g, b) for i in ids])
+                if idx == 0 and self.effects_on:
+                    sound.player.play_effect(sound.FX_START)
+                if sound_on and kind and kind != sound.NONE:
+                    sound.player.play(kind, val)
+                if motion and self.robot:
+                    self.robot.send_motion(int(motion))
+                if self._wait(hold):
+                    return
+                sound.player.stop()            # 스텝 종료 → mp3 정지
+            # 페이드 아웃
+            for k in range(STEP, -1, -1):
+                f = k / STEP
+                if not self._leds([(i, int(r * f), int(g * f), int(b * f))
+                                   for i in ids]):
+                    return
+                if self._wait(0.04):
+                    return
+            self._leds([(i, 255, 255, 255) for i in ids])
+            self._wait(0.12)
+            if self.effects_on:
+                sound.player.play_effect(sound.FX_END)
+        finally:
+            cancelled = self._cancel_action.is_set()
+            if cancelled and self.robot:
+                try:
+                    self.robot.send_motion(0)
+                except Exception:
+                    pass
+            try:
+                if self.robot:
+                    self.robot.send_leds([(i, 0, 0, 0) for i in ids])
+            except Exception:
+                pass
+            try:
                 if self.robot and not cancelled:
                     self.robot.send_motion(READY_MOTION)
             except Exception:

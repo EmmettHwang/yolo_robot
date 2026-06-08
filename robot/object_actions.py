@@ -2,16 +2,19 @@
 """
 object_actions.py
 =================
-인식한 객체 class → 로봇 반응(모션 + 사운드) 매핑.
+인식한 객체 class → 로봇 반응(동작 + 사운드) 매핑.
+
+한 객체에 '서브 동작'을 최대 5개까지 지정해 순서대로 실행할 수 있다.
 
 매핑 구조 (JSON):
-  { "person": {"motion": 18, "sound_kind": "tts", "sound_value": "안녕하세요"}, ... }
+  { "person": {"steps": [
+        {"motion": 18, "sound_kind": "tts", "sound_value": "안녕", "duration": 3},
+        {"motion": 5,  "sound_kind": "random", "sound_value": "", "duration": 2}
+     ]}, ... }
 
-UI(ActionEditor):
-  - 객체/모션/사운드 모두 드롭다운.
-  - 객체는 '아직 지정 안 된 것'만 추가 드롭다운에 표시(중복 방지).
-  - 모션도 다른 행에서 쓰인 번호는 제외(중복 방지).
-  - 사운드=mp3 면 assets/mp3 목록을 메타정보(제목-아티스트(길이))로 드롭다운 표시.
+(옛 형식 {"motion":.., "sound_kind":..} 도 자동으로 steps 1개로 변환해 읽는다.)
+
+사운드 종류: none / mp3 / tts / random(다양한 로봇음 voice_*.wav 무작위).
 """
 
 import os
@@ -24,21 +27,48 @@ from paths import OBJECT_ACTIONS_JSON, DATA_DIR
 import sound as snd
 import mp3_library
 from motion_table import (
-    ALL_MOTIONS, motion_label, motion_name, COCO_CLASSES, coco_kr,
+    ALL_MOTIONS, motion_label, COCO_CLASSES, coco_kr,
 )
+
+MAX_STEPS = 5
+NONE_MOTION = "(없음)"
 
 
 def obj_label(name: str, num=None) -> str:
     """객체 이름에 번호 + 한글 번역 병기.
 
     num 지정 시: '1. person (사람)'  (인식/학습 화면과 일관성)
-    num 없으면 : 'person (사람)'
     """
     kr = coco_kr(name)
     base = f"{name} ({kr})" if kr else name
     return f"{num}. {base}" if num is not None else base
 
-NONE_MOTION = "(없음)"
+
+# ============================================================
+# 데이터 입출력 / 정규화
+# ============================================================
+def _normalize(entry: dict) -> dict:
+    """엔트리를 {'steps': [...]} 형태로 정규화(옛 평면 형식 호환)."""
+    if isinstance(entry, dict) and isinstance(entry.get("steps"), list):
+        raw = entry["steps"]
+    else:
+        raw = [entry] if isinstance(entry, dict) else []
+    steps = []
+    for s in raw[:MAX_STEPS]:
+        if not isinstance(s, dict):
+            continue
+        steps.append({
+            "motion": s.get("motion"),
+            "sound_kind": s.get("sound_kind", snd.NONE),
+            "sound_value": s.get("sound_value", ""),
+            "duration": s.get("duration"),
+        })
+    return {"steps": steps}
+
+
+def steps_of(act: dict) -> list:
+    """반응 엔트리에서 스텝 리스트를 반환(정규화 포함)."""
+    return _normalize(act).get("steps", [])
 
 
 def load_actions() -> dict:
@@ -46,7 +76,8 @@ def load_actions() -> dict:
         return {}
     try:
         with open(OBJECT_ACTIONS_JSON, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        return {k: _normalize(v) for k, v in data.items()}
     except Exception:
         return {}
 
@@ -58,17 +89,27 @@ def save_actions(mapping: dict) -> None:
 
 
 def perform(label: str, runner, player, mapping: dict = None) -> bool:
+    """객체 반응 실행(서브 동작 순차). runner 가 있으면 시퀀스로 전송."""
     mapping = mapping if mapping is not None else load_actions()
     act = mapping.get(label)
     if not act:
         return False
-    motion = act.get("motion")
-    if motion and runner is not None:
-        runner.send_once(int(motion))
-    kind = act.get("sound_kind", snd.NONE)
-    value = act.get("sound_value", "")
+    steps = steps_of(act)
+    if not steps:
+        return False
+    if runner is not None and hasattr(runner, "action_sequence"):
+        seq = [{"motion": s.get("motion"), "hold": s.get("duration"),
+                "sound_kind": s.get("sound_kind", snd.NONE),
+                "sound_value": s.get("sound_value", "")} for s in steps]
+        runner.action_sequence(seq, sound_on=player is not None)
+        return True
+    # 폴백: 첫 스텝만 단발 실행
+    s0 = steps[0]
+    if s0.get("motion") and runner is not None:
+        runner.send_once(int(s0["motion"]))
+    kind = s0.get("sound_kind", snd.NONE)
     if player is not None and kind and kind != snd.NONE:
-        player.play(kind, value)
+        player.play(kind, s0.get("sound_value", ""))
     return True
 
 
@@ -79,7 +120,6 @@ class ActionEditor(ttk.Frame):
     def __init__(self, master, class_names=None, **kw):
         super().__init__(master, **kw)
         self.mapping = load_actions()
-        # 선택 가능한 전체 객체 = COCO + 수집 클래스 + 기존 매핑 키
         base = list(COCO_CLASSES)
         for c in (class_names or []):
             if c not in base:
@@ -88,27 +128,23 @@ class ActionEditor(ttk.Frame):
             if k not in base:
                 base.append(k)
         self.all_objects = base
-        # 객체 → 표시 번호 (1부터; COCO는 그 순서 = 인식/학습 번호와 동일)
         self._obj_num = {o: i + 1 for i, o in enumerate(self.all_objects)}
-        self.motion_labels = [motion_label(n) for n in ALL_MOTIONS]
-        self.rows = []          # 각 행: dict
-        self._disp_to_name = {}  # 드롭다운 표시문자열 → 실제 클래스명
-        self.mp3_items = mp3_library.list_mp3()   # [(path,label)]
+        self._motion_values = [NONE_MOTION] + [motion_label(n)
+                                               for n in ALL_MOTIONS]
+        self.groups = []         # 각 객체 그룹
+        self._disp_to_name = {}
+        self.mp3_items = mp3_library.list_mp3()
         self._build()
         self._load_existing()
 
     # ---------- 레이아웃 ----------
     def _build(self):
-        tk.Label(self, text="🎯 객체 반응 지정",
+        tk.Label(self, text="🎯 인식 및 반응 설정",
                  font=("Malgun Gothic", 14, "bold")).pack(pady=(10, 2))
-        tk.Label(self, text="인식된 객체에 모션과 사운드를 지정합니다. "
-                 "(객체·모션은 중복 없이 선택 · 지속시간 비우면 mp3 길이)",
+        tk.Label(self, text="객체마다 동작+사운드를 '서브 동작'으로 최대 5개까지 "
+                 "추가해 순서대로 실행합니다. (지속 비우면 mp3 길이)",
                  font=("Malgun Gothic", 9), fg="#666").pack()
-        # 동작 종료 자동 감지는 프로토콜상 불가 → 비활성 표시(시간 기반 사용)
-        tk.Checkbutton(self, text="로봇 동작 종료 자동 감지 (미지원 — 시간 기반 사용)",
-                       state="disabled", font=("Malgun Gothic", 9)).pack()
 
-        # 추가 줄 (검색 + 드롭다운)
         add = tk.Frame(self); add.pack(fill="x", padx=12, pady=8)
         tk.Label(add, text="객체 검색:", font=("Malgun Gothic", 10)).pack(
             side="left")
@@ -121,17 +157,11 @@ class ActionEditor(ttk.Frame):
         self.add_combo = ttk.Combobox(add, textvariable=self.add_var,
                                       state="readonly", width=22)
         self.add_combo.pack(side="left", padx=(0, 6))
-        tk.Button(add, text="+ 추가", bg="#1565c0", fg="white", relief="flat",
-                  cursor="hand2", command=self._add_selected).pack(side="left")
+        tk.Button(add, text="+ 객체 추가", bg="#1565c0", fg="white",
+                  relief="flat", cursor="hand2",
+                  command=self._add_selected).pack(side="left")
         tk.Button(add, text="↻ mp3/목록 새로고침", cursor="hand2",
                   command=self._refresh_all).pack(side="left", padx=(8, 0))
-
-        # 헤더
-        head = tk.Frame(self); head.pack(fill="x", padx=12)
-        for txt, w in (("객체", 18), ("모션", 28), ("사운드", 11),
-                       ("값(mp3 / 읽을 말) · 지속(초)", 42)):
-            tk.Label(head, text=txt, width=w, anchor="w",
-                     font=("Malgun Gothic", 9, "bold")).pack(side="left")
 
         # 스크롤 영역
         wrap = tk.Frame(self); wrap.pack(fill="both", expand=True, padx=12,
@@ -141,7 +171,10 @@ class ActionEditor(ttk.Frame):
         self.body = tk.Frame(self.canvas)
         self.body.bind("<Configure>", lambda e: self.canvas.configure(
             scrollregion=self.canvas.bbox("all")))
-        self.canvas.create_window((0, 0), window=self.body, anchor="nw")
+        self._body_win = self.canvas.create_window((0, 0), window=self.body,
+                                                   anchor="nw")
+        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfig(
+            self._body_win, width=e.width))
         self.canvas.configure(yscrollcommand=sb.set)
         self.canvas.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
@@ -153,50 +186,19 @@ class ActionEditor(ttk.Frame):
 
         self._refresh_add_combo()
 
-    # ---------- 가용 목록 계산 (중복 방지) ----------
+    # ---------- 객체 추가 드롭다운 ----------
     def _used_objects(self):
-        return {r["obj"] for r in self.rows}
-
-    def _used_motions(self, except_row=None):
-        used = set()
-        for r in self.rows:
-            if r is except_row:
-                continue
-            m = self._row_motion_num(r)
-            if m is not None:
-                used.add(m)
-        return used
+        return {g["obj"] for g in self.groups}
 
     def _available_objects(self):
         used = self._used_objects()
         return [o for o in self.all_objects if o not in used]
 
-    def _row_motion_num(self, row):
-        t = row["motion_var"].get()
-        if t and t != NONE_MOTION and " - " in t:
-            try:
-                return int(t.split(" - ")[0])
-            except Exception:
-                return None
-        return None
-
-    def _available_motion_labels(self, row):
-        used = self._used_motions(except_row=row)
-        labels = [NONE_MOTION]
-        for n in ALL_MOTIONS:
-            if n not in used:
-                labels.append(motion_label(n))
-        cur = row["motion_var"].get()
-        if cur and cur not in labels:        # 현재 선택은 항상 포함
-            labels.append(cur)
-        return labels
-
     def _refresh_add_combo(self):
         avail = self._available_objects()
         q = self.search_var.get().strip().lower() \
             if hasattr(self, "search_var") else ""
-        pairs = [(obj_label(o, self._obj_num.get(o)), o)
-                 for o in avail]                     # (표시, 실제명)
+        pairs = [(obj_label(o, self._obj_num.get(o)), o) for o in avail]
         if q:
             pairs = [(d, o) for d, o in pairs if q in d.lower()]
         self._disp_to_name = {d: o for d, o in pairs}
@@ -206,151 +208,215 @@ class ActionEditor(ttk.Frame):
         else:
             self.add_var.set("(검색결과 없음)" if q else "(모든 객체 지정됨)")
 
-    def _refresh_motion_combos(self):
-        for r in self.rows:
-            r["motion_combo"]["values"] = self._available_motion_labels(r)
-
     def _refresh_all(self):
         self.mp3_items = mp3_library.list_mp3()
-        for r in list(self.rows):
-            self._rebuild_value(r)
-        self._refresh_motion_combos()
+        for g in self.groups:
+            for st in g["steps"]:
+                self._rebuild_value(st)
         self._refresh_add_combo()
 
-    # ---------- 행 추가/삭제 ----------
+    # ---------- 로드 ----------
     def _load_existing(self):
         for obj, act in self.mapping.items():
-            self._add_row(obj, act)
+            self._add_group(obj, steps_of(act))
         self._refresh_add_combo()
-        self._refresh_motion_combos()
 
     def _add_selected(self):
         disp = self.add_var.get().strip()
-        obj = self._disp_to_name.get(disp, disp)   # 표시문자열 → 실제 클래스명
+        obj = self._disp_to_name.get(disp, disp)
         if not obj or obj.startswith("("):
             return
         if obj in self._used_objects():
             return
-        self._add_row(obj, {})
+        self._add_group(obj, [])          # 빈 스텝 1개로 시작
         self._refresh_add_combo()
-        self._refresh_motion_combos()
         self._autosave()
 
-    def _add_row(self, obj, act):
-        row = {"obj": obj}
-        fr = tk.Frame(self.body); fr.pack(fill="x", pady=2)
-        row["frame"] = fr
+    # ---------- 객체 그룹(카드) ----------
+    def _add_group(self, obj, steps_data):
+        card = tk.Frame(self.body, bd=1, relief="solid", bg="#fbfcff")
+        card.pack(fill="x", pady=4, padx=2)
+        group = {"obj": obj, "frame": card, "steps": []}
 
-        tk.Label(fr, text=obj_label(obj, self._obj_num.get(obj)), width=22,
-                 anchor="w", font=("Malgun Gothic", 9)).pack(side="left")
+        head = tk.Frame(card, bg="#eef2fb"); head.pack(fill="x")
+        tk.Label(head, text=obj_label(obj, self._obj_num.get(obj)),
+                 font=("Malgun Gothic", 10, "bold"), bg="#eef2fb").pack(
+            side="left", padx=8, pady=4)
+        tk.Button(head, text="✕ 객체 삭제", cursor="hand2",
+                  relief="flat", fg="#c62828", bg="#eef2fb",
+                  command=lambda g=group: self._del_group(g)).pack(
+            side="right", padx=6)
+        group["add_btn"] = tk.Button(
+            head, text="＋ 서브 동작", cursor="hand2", relief="flat",
+            fg="#1565c0", bg="#eef2fb",
+            command=lambda g=group: self._add_step(g))
+        group["add_btn"].pack(side="right")
+
+        # 컬럼 헤더
+        ch = tk.Frame(card, bg="#fbfcff"); ch.pack(fill="x", padx=8)
+        for txt, w in (("모션", 24), ("사운드", 9),
+                       ("값 (mp3 / 읽을 말)", 32), ("지속", 8)):
+            tk.Label(ch, text=txt, width=w, anchor="w", bg="#fbfcff",
+                     font=("Malgun Gothic", 8, "bold"), fg="#888").pack(
+                side="left")
+
+        group["steps_frame"] = tk.Frame(card, bg="#fbfcff")
+        group["steps_frame"].pack(fill="x", padx=8, pady=(0, 6))
+
+        self.groups.append(group)
+        if steps_data:
+            for st in steps_data:
+                self._add_step(group, st)
+        else:
+            self._add_step(group, {})
+        self._update_add_btn(group)
+
+    def _del_group(self, group):
+        group["frame"].destroy()
+        if group in self.groups:
+            self.groups.remove(group)
+        self._refresh_add_combo()
+        self._autosave()
+
+    def _update_add_btn(self, group):
+        full = len(group["steps"]) >= MAX_STEPS
+        try:
+            group["add_btn"].config(
+                state="disabled" if full else "normal",
+                text="최대 5개" if full else "＋ 서브 동작")
+        except Exception:
+            pass
+
+    # ---------- 스텝(서브 동작) ----------
+    def _add_step(self, group, data=None):
+        if len(group["steps"]) >= MAX_STEPS:
+            return
+        data = data or {}
+        fr = tk.Frame(group["steps_frame"], bg="#fbfcff")
+        fr.pack(fill="x", pady=1)
+        step = {"frame": fr}
 
         mv = tk.StringVar()
-        m = act.get("motion")
-        if m:
-            mv.set(motion_label(int(m)))
-        else:
-            mv.set(NONE_MOTION)
-        row["motion_var"] = mv
-        mc = ttk.Combobox(fr, textvariable=mv, state="readonly", width=28)
+        m = data.get("motion")
+        mv.set(motion_label(int(m)) if m else NONE_MOTION)
+        step["motion_var"] = mv
+        mc = ttk.Combobox(fr, textvariable=mv, state="readonly", width=24,
+                          values=self._motion_values)
         mc.pack(side="left")
-        mc.bind("<<ComboboxSelected>>",
-                lambda e: (self._refresh_motion_combos(), self._autosave()))
-        row["motion_combo"] = mc
+        mc.bind("<<ComboboxSelected>>", lambda e: self._autosave())
+        step["motion_combo"] = mc
 
-        sv = tk.StringVar(value=act.get("sound_kind", snd.NONE))
-        row["sound_var"] = sv
-        sc = ttk.Combobox(fr, textvariable=sv, state="readonly", width=10,
+        sv = tk.StringVar(value=data.get("sound_kind", snd.NONE))
+        step["sound_var"] = sv
+        sc = ttk.Combobox(fr, textvariable=sv, state="readonly", width=9,
                           values=[k for k, _ in snd.KINDS])
         sc.pack(side="left", padx=(4, 0))
         sc.bind("<<ComboboxSelected>>",
-                lambda e, r=row: (self._rebuild_value(r), self._autosave()))
-        row["sound_combo"] = sc
+                lambda e, s=step: (self._rebuild_value(s), self._autosave()))
+        step["sound_combo"] = sc
 
-        row["val_holder"] = tk.Frame(fr)
-        row["val_holder"].pack(side="left", padx=(4, 0))
-        row["val_var"] = tk.StringVar(value=act.get("sound_value", ""))
+        step["val_holder"] = tk.Frame(fr, bg="#fbfcff")
+        step["val_holder"].pack(side="left", padx=(4, 0))
+        step["val_var"] = tk.StringVar(value=data.get("sound_value", ""))
 
-        # 지속시간(초) — 비우면 mp3 길이만큼. 라벨을 인라인으로 붙여 항상 정렬
-        dur = act.get("duration")
+        dur = data.get("duration")
         dv = tk.StringVar(value=(str(dur) if dur else ""))
-        durwrap = tk.Frame(fr); durwrap.pack(side="left", padx=(8, 0))
-        tk.Label(durwrap, text="지속", font=("Malgun Gothic", 9),
-                 fg="#666").pack(side="left")
-        de = tk.Entry(durwrap, textvariable=dv, width=5)
-        de.pack(side="left", padx=(2, 1))
-        tk.Label(durwrap, text="초", font=("Malgun Gothic", 9),
-                 fg="#666").pack(side="left")
+        durwrap = tk.Frame(fr, bg="#fbfcff"); durwrap.pack(side="left",
+                                                           padx=(8, 0))
+        de = tk.Entry(durwrap, textvariable=dv, width=4)
+        de.pack(side="left")
+        tk.Label(durwrap, text="초", font=("Malgun Gothic", 9), fg="#666",
+                 bg="#fbfcff").pack(side="left")
         de.bind("<FocusOut>", lambda e: self._autosave())
-        row["dur_var"] = dv
+        step["dur_var"] = dv
 
-        tk.Button(fr, text="✕", width=2, cursor="hand2",
-                  command=lambda r=row: self._del_row(r)).pack(side="left",
-                                                               padx=(4, 0))
-        self.rows.append(row)
-        self._rebuild_value(row)
+        tk.Button(fr, text="✕", width=2, cursor="hand2", relief="flat",
+                  command=lambda g=group, s=step: self._del_step(g, s)).pack(
+            side="left", padx=(6, 0))
 
-    def _del_row(self, row):
-        row["frame"].destroy()
-        self.rows.remove(row)
-        self._refresh_add_combo()
-        self._refresh_motion_combos()
+        group["steps"].append(step)
+        self._rebuild_value(step)
+        self._update_add_btn(group)
+        if data == {}:
+            self._autosave()
+
+    def _del_step(self, group, step):
+        step["frame"].destroy()
+        if step in group["steps"]:
+            group["steps"].remove(step)
+        if not group["steps"]:           # 스텝이 0개면 객체 자체 삭제
+            self._del_group(group)
+            return
+        self._update_add_btn(group)
         self._autosave()
 
-    # ---------- 값 위젯 (사운드 종류에 따라 교체) ----------
-    def _rebuild_value(self, row):
-        for w in row["val_holder"].winfo_children():
+    # ---------- 값 위젯 ----------
+    def _rebuild_value(self, step):
+        for w in step["val_holder"].winfo_children():
             w.destroy()
-        kind = row["sound_var"].get()
+        kind = step["sound_var"].get()
         if kind == snd.MP3:
             labels = [lb for _, lb in self.mp3_items]
             paths = [p for p, _ in self.mp3_items]
             disp = tk.StringVar()
-            row["_mp3_disp"] = disp          # 참조 유지(GC 방지)
-            cur = row["val_var"].get()
+            step["_mp3_disp"] = disp
+            cur = step["val_var"].get()
             if cur:
                 if cur in paths:
                     disp.set(labels[paths.index(cur)])
                 else:
-                    # 경로가 정확히 안 맞아도 파일명으로 매칭/표시(안 보이던 문제 보완)
-                    base = os.path.basename(cur)
+                    bn = os.path.basename(cur)
                     matched = next((lb for p, lb in self.mp3_items
-                                    if os.path.basename(p) == base), None)
-                    disp.set(matched or base)
-            cb = ttk.Combobox(row["val_holder"], textvariable=disp,
-                              state="readonly", width=34,
+                                    if os.path.basename(p) == bn), None)
+                    disp.set(matched or bn)
+            cb = ttk.Combobox(step["val_holder"], textvariable=disp,
+                              state="readonly", width=32,
                               values=labels or ["(assets/mp3 비어있음)"])
 
-            def on_sel(e, r=row, ps=paths, ls=labels, d=disp):
+            def on_sel(e, s=step, ps=paths, ls=labels, d=disp):
                 if d.get() in ls:
-                    r["val_var"].set(ps[ls.index(d.get())])
+                    s["val_var"].set(ps[ls.index(d.get())])
                     self._autosave()
             cb.bind("<<ComboboxSelected>>", on_sel)
             cb.pack(side="left")
         elif kind == snd.TTS:
-            ent = tk.Entry(row["val_holder"], textvariable=row["val_var"],
-                           width=34)
+            ent = tk.Entry(step["val_holder"], textvariable=step["val_var"],
+                           width=32)
             ent.pack(side="left")
             ent.bind("<FocusOut>", lambda e: self._autosave())
+        elif kind == snd.RANDOM:
+            step["val_var"].set("")
+            tk.Label(step["val_holder"], text="🎲 랜덤 로봇음 (다양한 소리)",
+                     width=32, anchor="w", fg="#6a1b9a",
+                     bg="#fbfcff").pack(side="left")
         else:
-            row["val_var"].set("")
-            tk.Label(row["val_holder"], text="(사운드 없음)", width=34,
-                     anchor="w", fg="#999").pack(side="left")
+            step["val_var"].set("")
+            tk.Label(step["val_holder"], text="(사운드 없음)", width=32,
+                     anchor="w", fg="#999", bg="#fbfcff").pack(side="left")
 
     # ---------- 저장 ----------
+    def _step_motion_num(self, step):
+        t = step["motion_var"].get()
+        if t and t != NONE_MOTION and " - " in t:
+            try:
+                return int(t.split(" - ")[0])
+            except Exception:
+                return None
+        return None
+
     def _collect(self) -> dict:
         result = {}
-        for r in self.rows:
-            motion = self._row_motion_num(r)
-            kind = r["sound_var"].get() or snd.NONE
-            val = r["val_var"].get().strip()
-            if motion is None and kind == snd.NONE:
-                continue
-            entry = {"sound_kind": kind, "sound_value": val}
-            if motion is not None:
-                entry["motion"] = motion
-            dv = r.get("dur_var")
-            if dv is not None:
-                t = dv.get().strip()
+        for g in self.groups:
+            steps = []
+            for st in g["steps"]:
+                motion = self._step_motion_num(st)
+                kind = st["sound_var"].get() or snd.NONE
+                val = st["val_var"].get().strip()
+                if motion is None and kind == snd.NONE:
+                    continue
+                entry = {"motion": motion, "sound_kind": kind,
+                         "sound_value": val}
+                t = st["dur_var"].get().strip()
                 if t:
                     try:
                         d = float(t)
@@ -358,14 +424,16 @@ class ActionEditor(ttk.Frame):
                             entry["duration"] = d
                     except Exception:
                         pass
-            result[r["obj"]] = entry
+                steps.append(entry)
+            if steps:
+                result[g["obj"]] = {"steps": steps}
         return result
 
     def _autosave(self):
-        """변경 즉시 조용히 저장."""
         self.mapping = self._collect()
         save_actions(self.mapping)
 
     def _save(self):
         self._autosave()
-        messagebox.showinfo("저장", f"{len(self.mapping)}개 객체 반응을 저장했습니다.")
+        messagebox.showinfo("저장",
+                            f"{len(self.mapping)}개 객체 반응을 저장했습니다.")
