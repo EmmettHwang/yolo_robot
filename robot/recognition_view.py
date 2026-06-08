@@ -567,11 +567,29 @@ class RecognitionView(ttk.Frame):
         except Exception:
             pass
 
+    def _yolo_off(self):
+        """YOLO 인식을 끄고 수동 조작을 활성화(이미 꺼져 있으면 그대로)."""
+        if self.yolo_on:
+            self.yolo_on = False
+            self.yolo_btn.config(text="YOLO: OFF")
+            self._set_manual_enabled(True)
+
     def _open_control_panel(self):
         if not self.runner:
             messagebox.showinfo("알림", "먼저 '연결 & 시작'을 누르세요.")
             return
+        # 수동 제어로 넘어가기 전: 진행 중인 동작 정지 + YOLO OFF(자동 반응 차단)
+        try:
+            self.runner.stop_all()
+        except Exception:
+            pass
+        try:
+            self.player.stop()
+        except Exception:
+            pass
+        self._yolo_off()
         from robot_control_panel import ControlPanel
+        # 모달: 최상위 + 포커스 + 메인 윈도 잠금(제어판 __init__에서 처리)
         ControlPanel(self.winfo_toplevel(), self.runner)
 
     def _toggle_sound(self):
