@@ -37,9 +37,12 @@ BEST_WEIGHTS = os.path.join(RUNS_DIR, "custom", "weights", "best.pt")
 ASSETS = os.path.join(BASE, "assets")
 SOUNDS_DIR = os.path.join(ASSETS, "sounds")
 MP3_DIR = os.path.join(ASSETS, "mp3")
-LOGO_PATH = os.path.join(ASSETS, "logo.png")
-MOTORMAP_PATH = os.path.join(ASSETS, "motorMap.png")
-MANUAL_PDF = os.path.join(ASSETS, "라인코어엠매뉴얼.pdf")
+# 이미지 → ./image, PDF/프로토콜 → ./protocol
+IMAGE_DIR = os.path.join(BASE, "image")
+PROTOCOL_DIR = os.path.join(BASE, "protocol")
+LOGO_PATH = os.path.join(IMAGE_DIR, "logo.png")
+MOTORMAP_PATH = os.path.join(IMAGE_DIR, "motorMap.png")
+MANUAL_PDF = os.path.join(PROTOCOL_DIR, "라인코어엠매뉴얼.pdf")
 
 # 폰트 (한글)
 FONT_PATH = "C:/Windows/Fonts/malgun.ttf"
