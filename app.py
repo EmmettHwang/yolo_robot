@@ -26,6 +26,7 @@ import serial.tools.list_ports as list_ports
 from PIL import Image, ImageTk
 
 from paths import BASE, CONFIG_INI, LOGO_PATH, ensure_dirs
+from version import __version__
 import trainer
 import yolo as yolo_mod
 from object_actions import ActionEditor
@@ -68,7 +69,7 @@ class App:
     def __init__(self):
         ensure_dirs()
         self.root = tk.Tk()
-        self.root.title("YOLOv5 휴머노이드 로봇")
+        self.root.title(f"YOLOv5 휴머노이드 로봇  v{__version__}")
         self.root.geometry("880x840")
         self.root.configure(bg=BG)
         self._style()
@@ -126,6 +127,11 @@ class App:
             tk.Label(header, text="MRT 라인코어 스마트",
                      font=("Malgun Gothic", 10), fg="#9fb3d8",
                      bg=HEADER_BG).pack(side="right", padx=20)
+        ver = tk.Label(header, text=f"v{__version__}  (설명서)",
+                       font=("Consolas", 9), fg="#9fb3d8", bg=HEADER_BG,
+                       cursor="hand2")
+        ver.pack(side="right", padx=4)
+        ver.bind("<Button-1>", lambda e: self._show_manual())
 
     # ---------- 탭: 포트/장치 ----------
     def _tab_devices(self, nb):
@@ -279,6 +285,10 @@ class App:
                     self.train_next, lambda: self.nb.select(self.rec_view)))
         else:
             self.model_status.config(text=f"✗ 모델 로드 실패: {info}", fg="#c62828")
+
+    def _show_manual(self):
+        import manual
+        manual.show_manual(self.root)
 
     def _on_close(self):
         try:
