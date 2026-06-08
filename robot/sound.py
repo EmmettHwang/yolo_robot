@@ -124,3 +124,6 @@ FX_CAPTURE = "capture"
 FX_START = "start"
 FX_END = "end"
 FX_DETECT = "detect"
+FX_STOP = "stop"            # 동작 정지 "딱!"
+FX_POWER_ON = "power_on"    # 전원 ON
+FX_POWER_OFF = "power_off"  # 전원 OFF

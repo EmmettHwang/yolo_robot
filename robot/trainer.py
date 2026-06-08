@@ -14,6 +14,7 @@ trainer.py
 import os
 import sys
 import csv
+import time
 import shutil
 import threading
 import subprocess
@@ -185,6 +186,17 @@ def build_data_yaml() -> str:
         f.write(f"nc: {len(classes)}\n")
         f.write(f"names: {names}\n")
     return DATA_YAML
+
+
+def _fmt_dur(sec):
+    """초 → '1시간 02분 03초' / '2분 05초' / '8초' 형태."""
+    sec = int(max(0, sec))
+    h, m, s = sec // 3600, (sec % 3600) // 60, sec % 60
+    if h:
+        return f"{h}시간 {m:02d}분 {s:02d}초"
+    if m:
+        return f"{m}분 {s:02d}초"
+    return f"{s}초"
 
 
 def read_results_metrics():
@@ -554,6 +566,9 @@ class TrainTab(ttk.Frame):
         except Exception:
             epochs, imgsz = 30, 320
         build_data_yaml()
+        self._t0 = time.time()
+        self._elapsed = 0.0
+        self._append("⏱ 학습 시작: " + time.strftime("%H:%M:%S") + "\n")
         threading.Thread(target=self._worker, args=(epochs, imgsz),
                          daemon=True).start()
 
@@ -587,6 +602,11 @@ class TrainTab(ttk.Frame):
         finally:
             self.proc = None
             try:
+                self._elapsed = time.time() - getattr(self, "_t0", time.time())
+                self._append(f"⏱ 총 소요 시간: {_fmt_dur(self._elapsed)}\n")
+            except Exception:
+                pass
+            try:
                 self.after(0, lambda: self.start_btn.config(state="normal"))
             except Exception:
                 pass
@@ -605,8 +625,12 @@ class TrainTab(ttk.Frame):
         tk.Label(body, text="📊 학습 결과", font=("Malgun Gothic", 15, "bold"),
                  bg=BG).pack(pady=(12, 2))
         ep = m.get("epochs")
-        tk.Label(body, text=(f"{ep} 에폭 학습 완료" if ep else "학습 완료"),
-                 font=("Malgun Gothic", 10), fg="#555", bg=BG).pack()
+        el = getattr(self, "_elapsed", 0.0)
+        sub = (f"{ep} 에폭 학습 완료" if ep else "학습 완료")
+        if el:
+            sub += f"   ·   ⏱ 총 {_fmt_dur(el)} 소요"
+        tk.Label(body, text=sub, font=("Malgun Gothic", 10), fg="#555",
+                 bg=BG).pack()
 
         # ----- 성능 지표 카드 -----
         cards = tk.Frame(body, bg=BG); cards.pack(pady=10)
@@ -650,9 +674,14 @@ class TrainTab(ttk.Frame):
         tk.Button(btns, text="🗑 버리기", font=_FONT_BIG, bg="#c62828",
                   fg="white", relief="flat", cursor="hand2", padx=16, pady=4,
                   command=lambda: self._discard(top)).pack(side="left", padx=6)
+        tk.Button(btns, text="닫기", font=_FONT_BIG, bg="#607d8b",
+                  fg="white", relief="flat", cursor="hand2", padx=16, pady=4,
+                  command=top.destroy).pack(side="left", padx=6)
 
         try:
+            top.transient(self.winfo_toplevel())
             top.lift(); top.attributes("-topmost", True)
+            top.grab_set()                      # 다른 창 잠금(모달)
             top.after(60, top.focus_force)
         except Exception:
             pass
@@ -683,30 +712,118 @@ class TrainTab(ttk.Frame):
             return "🙂 쓸 만합니다 — 데이터를 더 모으면 더 좋아져요.", ORANGE
         return "👎 아직 낮습니다 — 데이터를 더 모으거나 에폭을 늘려 다시 학습하세요.", "#c62828"
 
+    def _ask_model_name(self, parent):
+        """./model 폴더의 기존 모델 목록을 보여주며 저장 이름을 입력받는다."""
+        existing = []
+        if os.path.isdir(MODELS_DIR):
+            existing = sorted(f for f in os.listdir(MODELS_DIR)
+                              if f.lower().endswith(".pt"))
+        dlg = tk.Toplevel(parent)
+        dlg.title("모델 저장 이름")
+        dlg.configure(bg=BG)
+        dlg.transient(parent)
+        result = {"name": None}
+
+        tk.Label(dlg, text="저장할 모델 이름 (./model 폴더)",
+                 font=("Malgun Gothic", 12, "bold"), bg=BG).pack(
+            padx=18, pady=(14, 6))
+
+        if existing:
+            tk.Label(dlg, text="이미 있는 모델 — 클릭하면 이름이 채워집니다 "
+                     "(같은 이름으로 저장하면 덮어씀):",
+                     font=("Malgun Gothic", 9), fg="#555", bg=BG).pack(
+                anchor="w", padx=18)
+            lbf = tk.Frame(dlg); lbf.pack(fill="x", padx=18, pady=(2, 4))
+            lb = tk.Listbox(lbf, height=min(6, len(existing)),
+                            font=("Consolas", 10))
+            for f in existing:
+                lb.insert("end", f)
+            sb = ttk.Scrollbar(lbf, orient="vertical", command=lb.yview)
+            lb.configure(yscrollcommand=sb.set)
+            sb.pack(side="right", fill="y")
+            lb.pack(side="left", fill="x", expand=True)
+            lb.bind("<<ListboxSelect>>",
+                    lambda e: (var.set(lb.get(lb.curselection()[0]))
+                               if lb.curselection() else None))
+        else:
+            tk.Label(dlg, text="(아직 저장된 모델이 없습니다)",
+                     font=("Malgun Gothic", 9), fg="#999", bg=BG).pack(
+                anchor="w", padx=18)
+
+        var = tk.StringVar()
+        ent = tk.Entry(dlg, textvariable=var, font=("Consolas", 12))
+        ent.pack(fill="x", padx=18, pady=(8, 2))
+        hint = tk.Label(dlg, text="", font=("Malgun Gothic", 9), bg=BG)
+        hint.pack(anchor="w", padx=18)
+
+        def _norm(n):
+            n = n.strip()
+            if n and not n.lower().endswith(".pt"):
+                n += ".pt"
+            return n
+
+        def _on_change(*_):
+            n = _norm(var.get())
+            if n and n in existing:
+                hint.config(text=f"⚠ '{n}' 이(가) 이미 있어요 — 저장 시 덮어씁니다.",
+                            fg=ORANGE)
+            else:
+                hint.config(text="", fg="#555")
+        var.trace_add("write", _on_change)
+
+        def ok():
+            n = _norm(var.get())
+            if not n:
+                hint.config(text="이름을 입력하세요.", fg="#c62828")
+                return
+            if n in existing and not messagebox.askyesno(
+                    "덮어쓰기", f"'{n}' 을(를) 덮어쓸까요?", parent=dlg):
+                return
+            result["name"] = n
+            dlg.destroy()
+
+        bar = tk.Frame(dlg, bg=BG); bar.pack(fill="x", padx=18, pady=12)
+        tk.Button(bar, text="취소", width=10,
+                  command=dlg.destroy).pack(side="right")
+        tk.Button(bar, text="저장", width=12, bg=GREEN, fg="white",
+                  relief="flat", cursor="hand2",
+                  command=ok).pack(side="right", padx=(0, 8))
+        ent.bind("<Return>", lambda e: ok())
+
+        dlg.update_idletasks()
+        try:
+            dlg.grab_set(); ent.focus_set()
+            dlg.lift(); dlg.attributes("-topmost", True)
+        except Exception:
+            pass
+        parent.wait_window(dlg)
+        # 대화상자가 닫히며 부모(결과창)의 모달 잠금이 풀리므로 다시 건다
+        try:
+            if parent.winfo_exists():
+                parent.grab_set()
+        except Exception:
+            pass
+        return result["name"]
+
     def _save_model(self, top):
         if not os.path.exists(BEST_WEIGHTS):
             messagebox.showerror("오류", "저장할 모델(best.pt)을 찾지 못했습니다.")
             return
-        name = simpledialog.askstring(
-            "모델 저장", "저장할 모델 이름 (./model 폴더):", parent=top)
+        name = self._ask_model_name(top)
         if not name:
             return
-        name = name.strip()
-        if not name.endswith(".pt"):
+        if not name.lower().endswith(".pt"):
             name += ".pt"
         os.makedirs(MODELS_DIR, exist_ok=True)
         dst = os.path.join(MODELS_DIR, name)
         try:
             shutil.copy(BEST_WEIGHTS, dst)
-            if messagebox.askyesno("모델 교체",
-                                   "이 모델을 인식에 바로 적용(active)할까요?"):
-                shutil.copy(dst, ACTIVE_MODEL)
-                set_active_name(name)        # 원본 이름 기록
-            messagebox.showinfo(
-                "완료", f"저장됨:\n{dst}\n③ 모델 적용 탭으로 이동합니다.")
+            shutil.copy(dst, ACTIVE_MODEL)   # 저장과 동시에 인식에 바로 적용
+            set_active_name(name)            # 원본 이름 기록
         except Exception as e:
             messagebox.showerror("오류", f"저장 실패: {e}")
             return
+        self._append(f"💾 저장·적용: {name}\n")
         try:
             top.destroy()
         except Exception:
@@ -749,10 +866,14 @@ class SwapTab(ttk.Frame):
                  font=("Malgun Gothic", 10), fg="#555", bg=BG).pack(
             anchor="w", padx=14, pady=(10, 2))
 
-        self.active_lbl = tk.Label(self, text="", font=("Malgun Gothic", 11,
-                                                        "bold"), fg="#2e7d32",
-                                   bg=BG)
-        self.active_lbl.pack(anchor="w", padx=14, pady=(0, 6))
+        banner = tk.Frame(self, bg="#e8f5e9", highlightthickness=1,
+                          highlightbackground="#a5d6a7")
+        banner.pack(fill="x", padx=14, pady=(0, 8))
+        self.active_lbl = tk.Label(banner, text="", font=("Malgun Gothic", 13,
+                                                          "bold"),
+                                   fg="#1b5e20", bg="#e8f5e9", anchor="w",
+                                   justify="left")
+        self.active_lbl.pack(fill="x", padx=12, pady=9)
 
         # 다운로드 섹션
         df = ttk.LabelFrame(self, text="  기본 모델 다운로드 & 적용  ")
@@ -773,7 +894,7 @@ class SwapTab(ttk.Frame):
         # 폴더 선택 섹션
         pf = ttk.LabelFrame(self, text="  내 model 폴더에서 선택 & 적용  ")
         pf.pack(fill="x", padx=14, pady=8)
-        tk.Button(pf, text="📁 model 폴더의 .pt 선택", cursor="hand2",
+        tk.Button(pf, text="📁 model 폴더의 커스텀 모델(.pt) 선택", cursor="hand2",
                   command=self._pick_apply).pack(padx=8, pady=8)
 
         self.status = tk.Label(self, text="", font=("Malgun Gothic", 10),
@@ -795,9 +916,19 @@ class SwapTab(ttk.Frame):
             pass
 
     def _set_active_label(self):
-        active = (get_active_name() or "active.pt") \
-            if os.path.exists(ACTIVE_MODEL) else "없음 (기본 yolov5s)"
-        self.active_lbl.config(text=f"현재 적용(active): {active}")
+        if os.path.exists(ACTIVE_MODEL):
+            active = get_active_name() or "active.pt"
+            self.active_lbl.config(
+                text=f"✅ 지금 인식에 적용된 모델:  {active}",
+                fg="#1b5e20", bg="#e8f5e9")
+            self.active_lbl.master.config(bg="#e8f5e9",
+                                          highlightbackground="#a5d6a7")
+        else:
+            self.active_lbl.config(
+                text="⚠ 적용된 모델 없음 — 기본 yolov5s 사용 중",
+                fg="#7c5b00", bg="#fff8e1")
+            self.active_lbl.master.config(bg="#fff8e1",
+                                          highlightbackground="#ffe082")
 
     def _download_apply(self):
         name = self.dl_var.get().strip()
@@ -889,6 +1020,13 @@ class TrainingStudio(tk.Tk):
         self.nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         self.after(120, lambda: self._on_tab_changed(None))  # 초기 진입 처리
+        # 최상위로 올리기(메인 앱은 별도 프로세스에서 대기창으로 잠금)
+        try:
+            self.lift()
+            self.attributes("-topmost", True)
+            self.after(150, self.focus_force)
+        except Exception:
+            pass
 
     def _style(self):
         st = ttk.Style()

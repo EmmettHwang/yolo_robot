@@ -561,6 +561,11 @@ class RecognitionView(ttk.Frame):
             self.player.stop()       # 재생 중인 mp3도 함께 중지
         except Exception:
             pass
+        try:
+            if self.sound_on:        # 순종하듯 "딱!" 멈추는 효과음
+                self.player.play_effect(snd.FX_STOP)
+        except Exception:
+            pass
 
     def _open_control_panel(self):
         if not self.runner:

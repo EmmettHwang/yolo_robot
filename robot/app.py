@@ -73,8 +73,14 @@ class App:
         ensure_dirs()
         self.root = tk.Tk()
         self.root.title(f"YOLOv5 휴머노이드 로봇  v{__version__}")
-        self.root.geometry("1180x840")
-        self.root.minsize(1080, 760)
+        # 화면 세로를 꽉 채우도록(작업표시줄 고려해 약간 여유)
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        win_w = min(1180, sw)
+        win_h = sh - 64
+        x = max(0, (sw - win_w) // 2)
+        self.root.geometry(f"{win_w}x{win_h}+{x}+0")
+        self.root.minsize(1080, 640)
         self.root.configure(bg=BG)
         self._style()
 
@@ -122,16 +128,28 @@ class App:
         """로봇 학습 창(트레이너)을 별도 프로세스로 열고, 닫히면(뒤로) 모델 변경 시 재로드."""
         if self._train_proc is not None and self._train_proc.poll() is None:
             return
+        # 학습 스튜디오가 카메라를 쓰므로 인식이 잡은 포트/카메라를 먼저 반환
+        try:
+            self.rec_view.stop()
+        except Exception:
+            pass
         self._train_before_mtime = self._get_active_mtime()
         self._train_proc = subprocess.Popen(
             [PY, os.path.join(ROBOT_DIR, "trainer.py")], cwd=BASE)
+        self._show_wait_dialog(
+            title="로봇 학습 진행 중",
+            heading="🧠  로봇 학습 스튜디오",
+            msg=("별도 학습 스튜디오 창에서 데이터 수집·학습·모델 적용을 진행하세요.\n"
+                 "마치고 그 창을 닫으면 자동으로 계속됩니다."),
+            waiting="⏳ 학습 스튜디오를 기다리는 중... (이 창은 잠금 상태)")
         self._watch_train_proc()
 
     def _watch_train_proc(self):
         if self._train_proc is not None and self._train_proc.poll() is None:
             self.root.after(700, self._watch_train_proc)
             return
-        # 트레이너가 닫힘(뒤로) → active 모델이 바뀌었으면 다시 로드
+        # 트레이너가 닫힘(뒤로) → 잠금 해제 후, active 모델이 바뀌었으면 다시 로드
+        self._hide_wait_dialog()
         if self._get_active_mtime() != self._train_before_mtime:
             self.model_status.config(text="🔄 모델 변경 감지 — 다시 로드합니다...",
                                      fg="#ef6c00")
@@ -292,24 +310,27 @@ class App:
         self._show_wait_dialog()        # 메인 윈도 잠금 + 안내
         self._watch_device_proc()
 
-    def _show_wait_dialog(self):
+    def _show_wait_dialog(self, title="장치 및 로봇 설정 진행 중",
+                          heading="🔧  장치 및 로봇 설정",
+                          msg=("별도 설정 창에서 포트·카메라·마이크를 확인/테스트하세요.\n"
+                               "설정을 마치고 그 창을 닫으면 자동으로 계속됩니다."),
+                          waiting="⏳ 설정 창을 기다리는 중... (이 창은 잠금 상태)"):
         if self._wait_dlg is not None:
             return
         dlg = tk.Toplevel(self.root)
-        dlg.title("장치 및 로봇 설정 진행 중")
+        dlg.title(title)
         dlg.configure(bg="white")
         dlg.resizable(False, False)
         dlg.transient(self.root)
-        tk.Label(dlg, text="🔧  장치 및 로봇 설정",
+        tk.Label(dlg, text=heading,
                  font=("Malgun Gothic", 14, "bold"), bg="white").pack(
             pady=(20, 6), padx=24)
-        tk.Label(dlg, text="별도 설정 창에서 포트·카메라·마이크를 확인/테스트하세요.\n"
-                 "설정을 마치고 그 창을 닫으면 자동으로 계속됩니다.",
+        tk.Label(dlg, text=msg,
                  font=("Malgun Gothic", 10), fg="#555", bg="white",
                  justify="center").pack(padx=24)
         pb = ttk.Progressbar(dlg, mode="indeterminate", length=320)
         pb.pack(pady=16); pb.start(12)
-        tk.Label(dlg, text="⏳ 설정 창을 기다리는 중... (이 창은 잠금 상태)",
+        tk.Label(dlg, text=waiting,
                  font=("Malgun Gothic", 9), fg="#ef6c00", bg="white").pack(
             pady=(0, 16))
         dlg.protocol("WM_DELETE_WINDOW", lambda: None)   # 임의 닫기 방지

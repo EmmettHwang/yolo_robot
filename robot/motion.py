@@ -176,6 +176,9 @@ class MotionRunner:
         if not self.robot:
             self._mark_disc()
             return
+        if self.effects_on:          # 전원 ON/OFF 효과음
+            sound.player.play_effect(
+                sound.FX_POWER_ON if on else sound.FX_POWER_OFF)
         if on:
             if not self.robot.power(True):
                 self._mark_disc(); return

@@ -31,6 +31,15 @@ class ControlPanel(tk.Toplevel):
         self._alive = True
         self._build()
         self._flush()                # 실시간 전송 루프 시작
+        # 모달: 최상위로 올리고 메인 윈도는 잠근다(닫기 전까지 조작 불가)
+        try:
+            self.transient(parent)
+            self.lift()
+            self.attributes("-topmost", True)
+            self.grab_set()
+            self.after(60, self.focus_force)
+        except Exception:
+            pass
 
     def _build(self):
         from scrollable import make_scrollable, fit_window
