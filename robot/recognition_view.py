@@ -44,6 +44,15 @@ DIR_SEQ = {
 }
 
 
+def _clock(ts):
+    return time.strftime("%H:%M:%S", time.localtime(ts)) if ts else "--:--:--"
+
+
+def _dur(sec):
+    sec = int(max(0, sec))
+    return f"{sec // 3600:02d}:{(sec % 3600) // 60:02d}:{sec % 60:02d}"
+
+
 def _read_config():
     cfg = configparser.ConfigParser()
     try:
@@ -87,6 +96,12 @@ class RecognitionView(ttk.Frame):
         self._last_acted = ""
         self._last_trigger = 0.0
         self._empty = 0
+        # 인식 지속시간 추적
+        self._cur_obj = ""
+        self._cur_start = 0.0
+        self._prev_obj = ""
+        self._prev_start = 0.0
+        self._prev_dur = 0.0
 
         self._build()
 
@@ -448,19 +463,37 @@ class RecognitionView(ttk.Frame):
             self.canvas.itemconfig(self.img_id, image=self._imgtk)
             self.canvas.coords(self.img_id, cw // 2, ch // 2)
 
+            # 인식 지속시간 추적 (현재 객체가 바뀌면 직전으로 넘김)
+            now = time.time()
+            cur = top_label or ""
+            if cur != self._cur_obj:
+                if self._cur_obj:
+                    self._prev_obj = self._cur_obj
+                    self._prev_start = self._cur_start
+                    self._prev_dur = now - self._cur_start
+                self._cur_obj = cur
+                self._cur_start = now if cur else 0.0
+
             if top_label:
                 kr = coco_kr(top_label)
                 name_disp = f"{top_id + 1}. {top_label}" + (
                     f" ({kr})" if kr else "")
                 self.lbl_obj.config(
-                    text=f"인식: {name_disp}  {top_conf*100:.0f}%")
+                    text=f"인식: {name_disp}  {top_conf*100:.0f}%\n"
+                         f"        최초 {_clock(self._cur_start)} · "
+                         f"지속 {_dur(now - self._cur_start)}")
             else:
                 self.lbl_obj.config(text="인식: -")
 
         self.lbl_conn.config(
             text=f"연결: {'정상' if self.robot and self.robot.is_connected else '-'}")
-        self.lbl_motion.config(
-            text=f"직전 동작 객체: {self._last_acted or '-'}")
+        if self._prev_obj:
+            self.lbl_motion.config(
+                text=f"직전 인식: {self._prev_obj}\n"
+                     f"        최초 {_clock(self._prev_start)} · "
+                     f"지속 {_dur(self._prev_dur)}")
+        else:
+            self.lbl_motion.config(text="직전 인식: -")
         self.lbl_model.config(text=f"모델: {self.model_label}")
 
     # ============================================================
@@ -517,9 +550,12 @@ class RecognitionView(ttk.Frame):
             self.runner.start_sequence(DIR_SEQ[direction])
 
     def set_preloaded(self, model, label):
-        """app에서 미리 로드한 모델을 넘겨받아 start() 시 재사용."""
+        """app에서 (재)로드한 모델을 받음. 실행 중이면 즉시 교체(다음 추론부터 적용)."""
         self._pre_model = model
         self._pre_label = label
+        if self.running and model is not None:
+            self.model = model
+            self.model_label = label
 
     def _on_grid(self, entry):
         """그리드 버튼: 모션 전송 + (지정 시) 사운드 재생."""

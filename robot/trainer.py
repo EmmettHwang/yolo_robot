@@ -528,29 +528,34 @@ class TrainWindow:
                     pass
 
     def _prompt_save(self):
-        if not os.path.exists(BEST_WEIGHTS):
-            return
-        name = simpledialog.askstring(
-            "모델 저장", "저장할 모델 이름 (./model 폴더):", parent=self.root)
-        if not name:
-            return
-        name = name.strip()
-        if not name.endswith(".pt"):
-            name += ".pt"
-        os.makedirs(MODELS_DIR, exist_ok=True)
-        dst = os.path.join(MODELS_DIR, name)
+        if os.path.exists(BEST_WEIGHTS):
+            name = simpledialog.askstring(
+                "모델 저장",
+                "저장할 모델 이름 (./model 폴더, 취소=저장 안 함):",
+                parent=self.root)
+            if name:
+                name = name.strip()
+                if not name.endswith(".pt"):
+                    name += ".pt"
+                os.makedirs(MODELS_DIR, exist_ok=True)
+                dst = os.path.join(MODELS_DIR, name)
+                try:
+                    shutil.copy(BEST_WEIGHTS, dst)
+                    if messagebox.askyesno(
+                            "모델 교체",
+                            "이 모델을 인식에 바로 적용(active)할까요?"):
+                        shutil.copy(dst, ACTIVE_MODEL)
+                    messagebox.showinfo("완료",
+                                        f"저장됨:\n{dst}\n학습 창을 닫습니다.")
+                except Exception as e:
+                    messagebox.showerror("오류", f"저장 실패: {e}")
+        # 학습이 끝났으니 창을 닫고 메뉴로 복귀
         try:
-            shutil.copy(BEST_WEIGHTS, dst)
-        except Exception as e:
-            messagebox.showerror("오류", f"저장 실패: {e}")
-            return
-        if messagebox.askyesno("모델 교체",
-                               "이 모델을 인식에 바로 적용(active)할까요?"):
-            try:
-                shutil.copy(dst, ACTIVE_MODEL)
-            except Exception:
-                pass
-        messagebox.showinfo("완료", f"저장됨:\n{dst}")
+            if self.root is not None:
+                self.root.destroy()
+                self.root = None
+        except Exception:
+            pass
 
     def _close(self):
         if self.proc is not None:

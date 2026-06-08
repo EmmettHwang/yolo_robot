@@ -25,7 +25,8 @@ from tkinter import ttk
 import serial.tools.list_ports as list_ports
 from PIL import Image, ImageTk
 
-from paths import BASE, ROBOT_DIR, CONFIG_INI, LOGO_PATH, ensure_dirs
+from paths import (BASE, ROBOT_DIR, CONFIG_INI, LOGO_PATH, ACTIVE_MODEL,
+                   ensure_dirs)
 from version import __version__
 from motion_table import COCO_CLASSES, coco_kr
 import trainer
@@ -86,6 +87,7 @@ class App:
         self._dev_proc = None
         self._prev_tab = None
         self._wait_dlg = None
+        self._active_mtime = self._get_active_mtime()
         # 자동 진행 옵션 (체크박스)
         self.auto_dev = tk.BooleanVar(value=True)    # 설정 후 자동 이동
         self.auto_yolo = tk.BooleanVar(value=False)  # 모델 준비 후 자동 이동
@@ -105,7 +107,28 @@ class App:
         self.nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.root.after(400, self._start_flow)   # 시퀀스 시작
+        self.root.after(400, self._start_flow)        # 시퀀스 시작
+        self.root.after(2500, self._watch_active_model)  # 모델 변경 감지
+
+    def _get_active_mtime(self):
+        try:
+            return os.path.getmtime(ACTIVE_MODEL) \
+                if os.path.exists(ACTIVE_MODEL) else 0
+        except Exception:
+            return 0
+
+    def _watch_active_model(self):
+        """active.pt 가 바뀌면(학습/교체) 자동으로 모델 재로드."""
+        m = self._get_active_mtime()
+        if (m != self._active_mtime and self._model_loaded
+                and not self._model_loading):
+            self._active_mtime = m
+            self.model_status.config(text="🔄 모델 변경 감지 — 다시 로드합니다...",
+                                     fg="#ef6c00")
+            self._reload_model()
+        else:
+            self._active_mtime = m
+        self.root.after(2500, self._watch_active_model)
 
     def _style(self):
         st = ttk.Style()
