@@ -31,6 +31,7 @@ BEST_WEIGHTS = os.path.join(RUNS_DIR, "custom", "weights", "best.pt")
 # 리소스
 ASSETS = os.path.join(BASE, "assets")
 SOUNDS_DIR = os.path.join(ASSETS, "sounds")
+MP3_DIR = os.path.join(ASSETS, "mp3")        # 동작 사운드용 mp3 보관 폴더
 
 # 폰트 (한글)
 FONT_PATH = "C:/Windows/Fonts/malgun.ttf"
@@ -38,5 +39,5 @@ FONT_PATH = "C:/Windows/Fonts/malgun.ttf"
 
 def ensure_dirs() -> None:
     """필요한 디렉터리를 만들어 둔다."""
-    for d in (DATA_DIR, SOUNDS_DIR):
+    for d in (DATA_DIR, SOUNDS_DIR, MP3_DIR):
         os.makedirs(d, exist_ok=True)

@@ -37,7 +37,7 @@ MOTION_NAMES = {
 # 연속(반복) 동작 시퀀스
 FORWARD_SEQUENCE = [2, 3, 4]        # 전진
 BACKWARD_SEQUENCE = [9, 10, 11]     # 후진
-SEQUENCE_DELAY_MS = 500             # 동작 사이 딜레이
+SEQUENCE_DELAY_MS = 200             # 동작 사이 딜레이
 
 # 기본 자세
 READY_MOTION = 1
@@ -45,3 +45,32 @@ READY_MOTION = 1
 
 def motion_name(idx: int) -> str:
     return MOTION_NAMES.get(idx, f"Motion {idx}")
+
+
+def motion_label(idx: int) -> str:
+    """드롭다운 표시용 'N - 이름'."""
+    return f"{idx} - {motion_name(idx)}"
+
+
+# 드롭다운용 전체 모션 목록(번호 오름차순)
+ALL_MOTIONS = sorted(MOTION_NAMES.keys())
+
+
+# ============================================================
+# COCO 80 클래스 (기본 yolov5s 모델 class 이름) — 객체 반응 드롭다운용
+# ============================================================
+COCO_CLASSES = [
+    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
+    "truck", "boat", "traffic light", "fire hydrant", "stop sign",
+    "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
+    "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag",
+    "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite",
+    "baseball bat", "baseball glove", "skateboard", "surfboard",
+    "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon",
+    "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot",
+    "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant",
+    "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote",
+    "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
+    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
+    "hair drier", "toothbrush",
+]

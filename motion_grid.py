@@ -13,10 +13,10 @@ import os
 import json
 
 import tkinter as tk
-from tkinter import simpledialog, messagebox
+from tkinter import ttk, messagebox
 
 from paths import MOTION_GRID_JSON, DATA_DIR
-from motion_table import motion_name
+from motion_table import motion_name, motion_label, ALL_MOTIONS
 
 # 기본 매핑 (모션테이블 참고)
 DEFAULT = [
@@ -64,7 +64,7 @@ class MotionGrid(tk.Frame):
         self._refresh()
 
         bar = tk.Frame(self); bar.pack(fill="x", pady=(6, 0))
-        tk.Label(bar, text="좌클릭=실행 · 우클릭=번호변경", fg="#888",
+        tk.Label(bar, text="좌클릭=실행 · 우클릭=동작 선택", fg="#888",
                  font=("Malgun Gothic", 8)).pack(side="left")
         tk.Button(bar, text="💾 저장", cursor="hand2",
                   command=self._save_btn).pack(side="right")
@@ -80,13 +80,30 @@ class MotionGrid(tk.Frame):
             self.on_motion(self.mapping[i])
 
     def _edit(self, i: int) -> None:
-        v = simpledialog.askinteger(
-            "동작 번호", f"{i + 1}번 버튼에 매핑할 모션 번호 (1~255):",
-            initialvalue=self.mapping[i], minvalue=1, maxvalue=255,
-            parent=self)
-        if v:
-            self.mapping[i] = int(v)
-            self._refresh()
+        """드롭다운으로 동작 선택."""
+        top = tk.Toplevel(self)
+        top.title(f"{i + 1}번 버튼 동작 선택")
+        top.transient(self.winfo_toplevel())
+        tk.Label(top, text="동작(모션) 선택:",
+                 font=("Malgun Gothic", 10)).pack(padx=14, pady=(12, 4))
+        labels = [motion_label(n) for n in ALL_MOTIONS]
+        var = tk.StringVar(value=motion_label(self.mapping[i]))
+        combo = ttk.Combobox(top, textvariable=var, state="readonly",
+                             width=30, values=labels)
+        combo.pack(padx=14)
+
+        def ok():
+            t = var.get()
+            if " - " in t:
+                try:
+                    self.mapping[i] = int(t.split(" - ")[0])
+                    self._refresh()
+                except Exception:
+                    pass
+            top.destroy()
+        tk.Button(top, text="확인", bg="#1565c0", fg="white", relief="flat",
+                  cursor="hand2", command=ok).pack(pady=10)
+        combo.focus_set()
 
     def _save_btn(self) -> None:
         self._save()

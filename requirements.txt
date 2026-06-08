@@ -24,6 +24,7 @@ pyserial>=3.5
 sounddevice>=0.4.6      # 마이크 VU / 녹음·재생, 스피커 테스트
 pygame>=2.6.0           # 동작 사운드 mp3 재생
 pyttsx3>=2.99           # 오프라인 TTS (Windows SAPI)
+mutagen>=1.47           # mp3 메타정보(제목/아티스트/길이) 읽기
 
 # --- (선택) 카메라 실제 이름 표시 (Windows) ---
 # pygrabber

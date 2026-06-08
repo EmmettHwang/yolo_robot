@@ -1,0 +1,7 @@
+{
+  "person": {
+    "sound_kind": "tts",
+    "sound_value": "안녕하세요",
+    "motion": 18
+  }
+}
