@@ -26,6 +26,7 @@ class ControlPanel(tk.Toplevel):
         self.title("로봇 제어 — LED / 포지션 / 전원")
         self._led_dirty = False
         self._pos_dirty = False
+        self._off_dirty = False
         self._manual = False
         self._manual_after = None
         self._alive = True
@@ -131,7 +132,18 @@ class ControlPanel(tk.Toplevel):
         # 영점(오프셋) 보정 — Set/Get LSM ZeroComp Value (범위 -12~+12)
         off = ttk.LabelFrame(body, text="  영점(오프셋) 보정  −12 ~ +12  ")
         off.pack(fill="x", padx=10, pady=6)
-        orow = tk.Frame(off); orow.pack(fill="x", padx=8, pady=6)
+        # 1) 자세 잡기: ZeroPose(모든 관절 0) → 오프셋 보정 → BasePose(기본자세)
+        prow0 = tk.Frame(off); prow0.pack(fill="x", padx=8, pady=(6, 2))
+        tk.Button(prow0, text="🧍 ZeroPose (전관절 0)", bg="#455a64", fg="white",
+                  relief="flat", cursor="hand2",
+                  command=self._zero_pose).pack(side="left", padx=4)
+        tk.Button(prow0, text="🤖 BasePose (기본자세)", bg="#455a64", fg="white",
+                  relief="flat", cursor="hand2",
+                  command=self._base_pose).pack(side="left", padx=4)
+        tk.Label(prow0, text="① ZeroPose로 0자세 → ② 관절별 오프셋 보정 → ③ BasePose",
+                 font=("Malgun Gothic", 8), fg="#888").pack(side="left", padx=6)
+
+        orow = tk.Frame(off); orow.pack(fill="x", padx=8, pady=(4, 2))
         tk.Label(orow, text="관절", font=("Malgun Gothic", 9)).pack(side="left")
         self.off_target = tk.StringVar(value=motor_map.joint_label(18))
         oc = ttk.Combobox(orow, textvariable=self.off_target,
@@ -144,20 +156,25 @@ class ControlPanel(tk.Toplevel):
         self.off_val = tk.IntVar(value=0)
         ofr = tk.Frame(off); ofr.pack(fill="x", padx=8)
         tk.Label(ofr, text="오프셋", width=6).pack(side="left")
+        # 슬라이더/스핀박스 조정 시 실시간 적용
         tk.Scale(ofr, from_=-12, to=12, orient="horizontal", resolution=1,
-                 variable=self.off_val).pack(side="left", fill="x", expand=True)
-        tk.Spinbox(ofr, from_=-12, to=12, width=5,
-                   textvariable=self.off_val).pack(side="left", padx=(6, 0))
+                 variable=self.off_val,
+                 command=lambda e: self._mark_off()).pack(
+            side="left", fill="x", expand=True)
+        sp = tk.Spinbox(ofr, from_=-12, to=12, width=5,
+                        textvariable=self.off_val,
+                        command=self._mark_off)
+        sp.pack(side="left", padx=(6, 0))
+        sp.bind("<KeyRelease>", lambda e: self._mark_off())
 
         obtn = tk.Frame(off); obtn.pack(pady=4)
         tk.Button(obtn, text="현재 읽기", cursor="hand2",
                   command=self._read_offset).pack(side="left", padx=4)
-        tk.Button(obtn, text="✓ 오프셋 적용", bg="#6a1b9a", fg="white",
-                  relief="flat", cursor="hand2",
-                  command=self._apply_offset).pack(side="left", padx=4)
         tk.Button(obtn, text="0으로", cursor="hand2",
-                  command=lambda: self.off_val.set(0)).pack(side="left", padx=4)
-        self.off_label = tk.Label(off, text="관절을 고르면 현재 오프셋을 읽어옵니다.",
+                  command=lambda: (self.off_val.set(0),
+                                   self._mark_off())).pack(side="left", padx=4)
+        self.off_label = tk.Label(off, text="관절을 고르면 현재 오프셋을 읽어옵니다. "
+                                  "(슬라이더 조정 시 실시간 적용)",
                                   font=("Malgun Gothic", 9), fg="#6a1b9a")
         self.off_label.pack(pady=(2, 6))
 
@@ -178,6 +195,9 @@ class ControlPanel(tk.Toplevel):
     def _mark_pos(self):
         self._pos_dirty = True
 
+    def _mark_off(self):
+        self._off_dirty = True
+
     def _flush(self):
         if not self._alive:
             return
@@ -192,6 +212,18 @@ class ControlPanel(tk.Toplevel):
                 if jid is not None:
                     self.runner.position(
                         [(jid, self.pos_val.get(), self.torq.get())])
+            if self._off_dirty:                        # 영점(오프셋) 실시간 적용
+                self._off_dirty = False
+                jid = self._off_joint()
+                if jid is not None:
+                    val = int(self.off_val.get())
+                    self.runner.zerocomp([(jid, val)])
+                    try:
+                        self.off_label.config(
+                            text=f"✓ ID{jid} 오프셋 {val} 실시간 적용",
+                            fg="#2e7d32")
+                    except Exception:
+                        pass
         self.after(FLUSH_MS, self._flush)
 
     # ---------- helpers ----------
@@ -295,13 +327,20 @@ class ControlPanel(tk.Toplevel):
         self.off_val.set(v)
         self.off_label.config(text=f"현재 오프셋 → {val}", fg="#2e7d32")
 
-    def _apply_offset(self):
-        jid = self._off_joint()
-        if jid is None or not self.runner:
+    def _zero_pose(self):
+        """모든 관절을 위치 0(영점 자세)으로 — 오프셋 보정 전 기준 자세."""
+        if not self.runner:
             return
-        val = int(self.off_val.get())
-        self.runner.zerocomp([(jid, val)])
-        self.off_label.config(text=f"✓ ID{jid} 오프셋 {val} 적용됨", fg="#2e7d32")
+        self.runner.position([(i, 0, 40) for i in motor_map.ALL_IDS])
+        self.off_label.config(text="🧍 ZeroPose — 전 관절 0 자세로 이동",
+                              fg="#455a64")
+
+    def _base_pose(self):
+        """기본자세(모션 1)로 복귀."""
+        if not self.runner:
+            return
+        self.runner.send_once(1)
+        self.off_label.config(text="🤖 BasePose — 기본자세(모션 1)", fg="#455a64")
 
     def destroy(self):
         self._alive = False
