@@ -28,7 +28,7 @@ import yolo as yolo_mod
 import sound as snd
 import object_actions
 from motion_table import coco_kr
-from paths import CONFIG_INI, DATA_DIR
+from paths import CONFIG_INI, DATA_DIR, ACTIVE_MODEL
 from robot_controller import HumanoidRobot
 from motion import MotionRunner
 from motion_table import FORWARD_SEQUENCE, BACKWARD_SEQUENCE
@@ -66,6 +66,15 @@ def _save_rec_settings(conf, max_det):
         pass
 
 
+def _active_mtime():
+    """active.pt 수정 시각(없으면 0). 모델 교체 감지용."""
+    try:
+        return os.path.getmtime(ACTIVE_MODEL) if os.path.exists(ACTIVE_MODEL) \
+            else 0.0
+    except Exception:
+        return 0.0
+
+
 def _clock(ts):
     return time.strftime("%H:%M:%S", time.localtime(ts)) if ts else "--:--:--"
 
@@ -96,6 +105,7 @@ class RecognitionView(ttk.Frame):
         self.model_label = "-"
         self._pre_model = None        # app에서 미리 로드해 넘겨준 모델
         self._pre_label = None
+        self._pre_mtime = 0.0         # 미리 로드한 모델의 active.pt 수정시각
         self.cap = None
         self.runner = None
         self.player = snd.player
@@ -298,14 +308,21 @@ class RecognitionView(ttk.Frame):
             messagebox.showerror("연결 실패",
                                  f"{port} 연결 실패:\n{last_err}")
             return
-        if self._pre_model is not None:
-            self.model = self._pre_model              # 앱에서 미리 로드한 모델 재사용
+        cur_mtime = _active_mtime()
+        # 미리 로드한 모델이 현재 active.pt 와 같은 버전일 때만 재사용,
+        # 모델이 교체돼 파일이 새것이면 디스크에서 다시 읽는다(즉시 반영).
+        if (self._pre_model is not None and cur_mtime
+                and cur_mtime == self._pre_mtime):
+            self.model = self._pre_model
             self.model_label = self._pre_label or "-"
         else:
             try:
                 self.model, self.model_label = yolo_mod.load_model()
                 self.model.eval()
                 yolo_mod.warmup(self.model, INFER_SIZE)
+                self._pre_model = self.model           # 캐시 갱신
+                self._pre_label = self.model_label
+                self._pre_mtime = cur_mtime
             except Exception as e:
                 messagebox.showerror("모델 로드 실패", str(e))
                 self._cleanup()
@@ -665,6 +682,7 @@ class RecognitionView(ttk.Frame):
         """app에서 (재)로드한 모델을 받음. 실행 중이면 즉시 교체(다음 추론부터 적용)."""
         self._pre_model = model
         self._pre_label = label
+        self._pre_mtime = _active_mtime()        # 이 모델이 반영된 active.pt 버전
         if self.running and model is not None:
             self.model = model
             self.model_label = label
