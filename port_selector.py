@@ -698,14 +698,25 @@ class PortSelector:
                 self._ui(lambda ex=e: self.led_test_status.config(
                     text=f"✗ 실패: {ex}", fg="#c62828"))
         finally:
-            if robot is not None:
+            # 기본자세 복귀 보장: LED 전송 중 끊겨 포트가 닫혔으면 재연결해서라도 1번 전송
+            try:
+                if robot is None or not robot.is_connected:
+                    from robot_controller import HumanoidRobot
+                    robot = HumanoidRobot(port, self.baudrate)
+                    robot.connect()
+            except Exception:
+                robot = None
+            if robot is not None and robot.is_connected:
                 try:
                     robot.send_leds([(i, 0, 0, 0) for i in range(1, 19)])
+                    time.sleep(0.05)
                 except Exception:
                     pass
                 try:
                     robot.send_motion(1)        # 기본자세(1)로 복귀
-                    time.sleep(0.15)            # 닫기 전 패킷 전송 보장
+                    time.sleep(0.2)
+                    robot.send_motion(1)        # 한 번 더(전송 보장)
+                    time.sleep(0.15)
                 except Exception:
                     pass
                 try:
