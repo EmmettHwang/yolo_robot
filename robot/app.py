@@ -73,7 +73,8 @@ class App:
         ensure_dirs()
         self.root = tk.Tk()
         self.root.title(f"YOLOv5 휴머노이드 로봇  v{__version__}")
-        self.root.geometry("880x840")
+        self.root.geometry("1180x840")
+        self.root.minsize(1080, 760)
         self.root.configure(bg=BG)
         self._style()
 

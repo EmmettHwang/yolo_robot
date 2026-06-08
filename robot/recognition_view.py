@@ -207,6 +207,22 @@ class RecognitionView(ttk.Frame):
                    textvariable=self._maxdet_var).pack(side="left", padx=(6, 0),
                                                        ipady=4)
 
+        # 설정 저장 버튼 (시인성 강조)
+        tk.Button(ctrl2, text="💾 설정 저장", bg="#1565c0", fg="white",
+                  activebackground="#0d47a1", activeforeground="white",
+                  relief="flat", cursor="hand2",
+                  font=("Malgun Gothic", 12, "bold"),
+                  command=self._save_settings).pack(side="left", padx=(16, 0),
+                                                    ipadx=10, ipady=4)
+
+        # 모델 표시 (최대 개수 옆에 크게)
+        tk.Label(ctrl2, text="모델:", font=("Malgun Gothic", 12, "bold")).pack(
+            side="left", padx=(20, 4))
+        self.lbl_model = tk.Label(ctrl2, text="-", anchor="w", justify="left",
+                                  font=("Malgun Gothic", 13, "bold"),
+                                  fg="#2e7d32")
+        self.lbl_model.pack(side="left")
+
         # --- 본문: 조이스틱 | 디스플레이 | 그리드 ---
         body = tk.Frame(panel); body.pack(fill="x", padx=8, pady=(0, 8))
 
@@ -231,10 +247,7 @@ class RecognitionView(ttk.Frame):
                                 font=("Malgun Gothic", 11, "bold"), fg="#1565c0")
         self.lbl_motion = tk.Label(disp, text="직전 인식: -", anchor="w",
                                    justify="left", font=("Malgun Gothic", 10))
-        self.lbl_model = tk.Label(disp, text="모델: -", anchor="w",
-                                  justify="left", font=("Malgun Gothic", 9),
-                                  fg="#777")
-        for w in (self.lbl_conn, self.lbl_obj, self.lbl_motion, self.lbl_model):
+        for w in (self.lbl_conn, self.lbl_obj, self.lbl_motion):
             w.pack(fill="x", pady=1)
 
         gwrap = tk.Frame(body); gwrap.pack(side="left", padx=(10, 0))
@@ -562,6 +575,19 @@ class RecognitionView(ttk.Frame):
             text=f"사운드: {'ON' if self.sound_on else 'OFF'}")
         if self.runner:
             self.runner.effects_on = self.sound_on
+
+    def _save_settings(self):
+        """인식 창의 설정(신뢰도/최대 개수)을 저장한다."""
+        try:
+            self.max_det = max(1, int(self._maxdet_var.get()))
+        except Exception:
+            pass
+        self.conf_threshold = float(self._conf_var.get())
+        _save_rec_settings(self.conf_threshold, self.max_det)
+        messagebox.showinfo(
+            "설정 저장",
+            f"신뢰도 ≥ {self.conf_threshold:.2f}\n"
+            f"최대 개수 = {self.max_det}\n저장되었습니다.")
 
     def reload_mapping(self):
         """객체 반응 매핑을 조용히 다시 불러온다(자동 호출용)."""
