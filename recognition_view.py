@@ -318,9 +318,17 @@ class RecognitionView(ttk.Frame):
         if (top_label and top_conf >= CONF_THRESHOLD
                 and top_label != self._last_acted
                 and now - self._last_trigger > TRIGGER_COOLDOWN):
-            runner = self.runner
-            player = self.player if self.sound_on else None
-            if object_actions.perform(top_label, runner, player, self.mapping):
+            act = self.mapping.get(top_label)
+            if act:
+                # 사운드
+                if self.sound_on:
+                    kind = act.get("sound_kind", snd.NONE)
+                    if kind and kind != snd.NONE:
+                        self.player.play(kind, act.get("sound_value", ""))
+                # LED 페이드인→반짝→모션→페이드아웃→반짝
+                motion = act.get("motion")
+                if motion and self.runner:
+                    self.runner.action_with_led(int(motion))
                 self._last_acted = top_label
                 self._last_trigger = now
 

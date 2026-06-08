@@ -27,6 +27,7 @@ from PIL import Image, ImageTk
 
 from paths import BASE, CONFIG_INI, LOGO_PATH, ensure_dirs
 from version import __version__
+from motion_table import COCO_CLASSES
 import trainer
 import yolo as yolo_mod
 from object_actions import ActionEditor
@@ -78,6 +79,9 @@ class App:
         self.model_label = None
         self._model_loading = False
         self._model_loaded = False
+        self._model_failed = False
+        self._coco_idx = 0
+        self._showcase_count = 0
         self._dev_proc = None
         self._prev_tab = None
 
@@ -134,6 +138,11 @@ class App:
         ver.pack(side="right", padx=4)
         ver.bind("<Button-1>", lambda e: self._show_manual())
 
+        man = tk.Label(header, text="📖 매뉴얼", font=("Malgun Gothic", 10, "bold"),
+                       fg="#ffd54f", bg=HEADER_BG, cursor="hand2")
+        man.pack(side="right", padx=10)
+        man.bind("<Button-1>", lambda e: self._show_pdf_manual())
+
     # ---------- 탭: 포트/장치 ----------
     def _tab_devices(self, nb):
         f = ttk.Frame(nb)
@@ -171,6 +180,10 @@ class App:
         self.model_status.pack(pady=4)
         self.model_pb = ttk.Progressbar(f, mode="indeterminate", length=320)
         self.model_pb.pack(pady=6)
+        # 로딩 중 식별 가능한 COCO 클래스 쭈루룩 표시
+        self.coco_label = tk.Label(f, text="", font=("Consolas", 13, "bold"),
+                                   fg="#1565c0", bg=BG)
+        self.coco_label.pack(pady=(2, 4))
 
         btns = tk.Frame(f, bg=BG); btns.pack(pady=18)
         tk.Button(btns, text="🧠 학습하기 (수집/학습/교체)",
@@ -269,9 +282,31 @@ class App:
         if self._model_loaded or self._model_loading:
             return
         self._model_loading = True
-        self.model_status.config(text="⏳ YOLOv5 모델 로딩 중...", fg="#ef6c00")
+        self._model_failed = False
+        self._coco_idx = 0
+        self._showcase_count = 0
+        self.model_status.config(text="⏳ YOLOv5 모델 로딩 중... 식별 가능한 객체:",
+                                 fg="#ef6c00")
         self.model_pb.start(12)
+        self._cycle_coco()                       # COCO 클래스 쭈루룩
         threading.Thread(target=self._load_worker, daemon=True).start()
+
+    def _cycle_coco(self):
+        """로딩 중 COCO 클래스 이름을 하나씩 보여준다. (모델 준비 + 한 바퀴 후 종료)"""
+        if self._model_failed:
+            return
+        try:
+            cls = COCO_CLASSES[self._coco_idx % len(COCO_CLASSES)]
+            self.coco_label.config(text=f"🔎  {cls}")
+        except Exception:
+            return
+        self._coco_idx += 1
+        self._showcase_count += 1
+        # 모델이 준비됐고 한 바퀴(80종) 다 보여줬으면 마무리
+        if self._model_loaded and self._showcase_count >= len(COCO_CLASSES):
+            self._finish_showcase()
+            return
+        self.root.after(80, self._cycle_coco)
 
     def _load_worker(self):
         try:
@@ -287,26 +322,38 @@ class App:
         self._model_loading = False
         self.model_pb.stop()
         if ok:
-            self._model_loaded = True
-            self.model_pb.pack_forget()
-            self.model_status.config(text=f"✓ 모델 준비 완료 — {info}",
-                                     fg="#2e7d32")
-            self.train_next.config(state="normal", bg=ACCENT)
+            self._model_loaded = True            # 쇼케이스가 한 바퀴 돌면 마무리됨
             self.rec_view.set_preloaded(self.model, self.model_label)
-            # 학습 탭에 있을 때만: '다음' 버튼 눌리는 애니메이션 후 인식 탭으로
-            try:
-                current = self.nb.nametowidget(self.nb.select())
-            except Exception:
-                current = None
-            if current is self.tab_train:
-                self.root.after(700, lambda: self._animate_press(
-                    self.train_next, lambda: self.nb.select(self.rec_view)))
+            self._loaded_info = info
         else:
+            self._model_failed = True
+            self.model_pb.pack_forget()
             self.model_status.config(text=f"✗ 모델 로드 실패: {info}", fg="#c62828")
+
+    def _finish_showcase(self):
+        self.model_pb.stop()
+        self.model_pb.pack_forget()
+        self.model_status.config(
+            text=f"✓ 모델 준비 완료 — {getattr(self, '_loaded_info', '')}",
+            fg="#2e7d32")
+        self.coco_label.config(
+            text=f"총 {len(COCO_CLASSES)}종 객체 식별 가능", fg="#2e7d32")
+        self.train_next.config(state="normal", bg=ACCENT)
+        try:
+            current = self.nb.nametowidget(self.nb.select())
+        except Exception:
+            current = None
+        if current is self.tab_train:
+            self.root.after(700, lambda: self._animate_press(
+                self.train_next, lambda: self.nb.select(self.rec_view)))
 
     def _show_manual(self):
         import manual
         manual.show_manual(self.root)
+
+    def _show_pdf_manual(self):
+        import pdf_viewer
+        pdf_viewer.open_manual(self.root)
 
     def _on_close(self):
         try:

@@ -213,6 +213,7 @@ class ActionEditor(ttk.Frame):
         self._add_row(obj, {})
         self._refresh_add_combo()
         self._refresh_motion_combos()
+        self._autosave()
 
     def _add_row(self, obj, act):
         row = {"obj": obj}
@@ -232,7 +233,7 @@ class ActionEditor(ttk.Frame):
         mc = ttk.Combobox(fr, textvariable=mv, state="readonly", width=28)
         mc.pack(side="left")
         mc.bind("<<ComboboxSelected>>",
-                lambda e: self._refresh_motion_combos())
+                lambda e: (self._refresh_motion_combos(), self._autosave()))
         row["motion_combo"] = mc
 
         sv = tk.StringVar(value=act.get("sound_kind", snd.NONE))
@@ -241,7 +242,7 @@ class ActionEditor(ttk.Frame):
                           values=[k for k, _ in snd.KINDS])
         sc.pack(side="left", padx=(4, 0))
         sc.bind("<<ComboboxSelected>>",
-                lambda e, r=row: self._rebuild_value(r))
+                lambda e, r=row: (self._rebuild_value(r), self._autosave()))
         row["sound_combo"] = sc
 
         row["val_holder"] = tk.Frame(fr)
@@ -259,6 +260,7 @@ class ActionEditor(ttk.Frame):
         self.rows.remove(row)
         self._refresh_add_combo()
         self._refresh_motion_combos()
+        self._autosave()
 
     # ---------- 값 위젯 (사운드 종류에 따라 교체) ----------
     def _rebuild_value(self, row):
@@ -279,18 +281,21 @@ class ActionEditor(ttk.Frame):
             def on_sel(e, r=row, ps=paths, ls=labels, d=disp):
                 if d.get() in ls:
                     r["val_var"].set(ps[ls.index(d.get())])
+                    self._autosave()
             cb.bind("<<ComboboxSelected>>", on_sel)
             cb.pack(side="left")
         elif kind == snd.TTS:
-            tk.Entry(row["val_holder"], textvariable=row["val_var"],
-                     width=34).pack(side="left")
+            ent = tk.Entry(row["val_holder"], textvariable=row["val_var"],
+                           width=34)
+            ent.pack(side="left")
+            ent.bind("<FocusOut>", lambda e: self._autosave())
         else:
             row["val_var"].set("")
             tk.Label(row["val_holder"], text="(사운드 없음)", width=34,
                      anchor="w", fg="#999").pack(side="left")
 
     # ---------- 저장 ----------
-    def _save(self):
+    def _collect(self) -> dict:
         result = {}
         for r in self.rows:
             motion = self._row_motion_num(r)
@@ -302,6 +307,13 @@ class ActionEditor(ttk.Frame):
             if motion is not None:
                 entry["motion"] = motion
             result[r["obj"]] = entry
-        self.mapping = result
-        save_actions(result)
-        messagebox.showinfo("저장", f"{len(result)}개 객체 반응을 저장했습니다.")
+        return result
+
+    def _autosave(self):
+        """변경 즉시 조용히 저장."""
+        self.mapping = self._collect()
+        save_actions(self.mapping)
+
+    def _save(self):
+        self._autosave()
+        messagebox.showinfo("저장", f"{len(self.mapping)}개 객체 반응을 저장했습니다.")

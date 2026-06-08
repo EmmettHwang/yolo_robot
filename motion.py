@@ -19,6 +19,11 @@ from robot_controller import HumanoidRobot, MotionSequencer  # noqa: F401  (재�
 from motion_table import (
     FORWARD_SEQUENCE, BACKWARD_SEQUENCE, SEQUENCE_DELAY_MS, READY_MOTION,
 )
+from motor_map import ALL_IDS
+
+# 인식 반응 LED 연출 기본값
+REACTION_COLOR = (0, 150, 255)      # 페이드 색 (시안)
+ACTION_LED_HOLD = 1.6               # 모션 실행 후 페이드아웃까지 대기(초)
 
 
 class MotionRunner:
@@ -54,6 +59,14 @@ class MotionRunner:
 
     def power(self, on: bool) -> None:
         self._enqueue(("pwr", bool(on)))
+
+    def action_with_led(self, motion: int, color=None, hold=None) -> None:
+        """인식 반응: LED 페이드인→반짝→모션→페이드아웃→반짝."""
+        self._enqueue(("effect", {
+            "motion": int(motion),
+            "color": color or REACTION_COLOR,
+            "hold": ACTION_LED_HOLD if hold is None else hold,
+        }))
 
     def start_sequence(self, seq, delay_ms: int = None) -> None:
         with self._lock:
@@ -99,16 +112,73 @@ class MotionRunner:
             ok = bool(r.send_positions(payload))
         elif kind == "pwr":
             ok = bool(r.power(payload))
+        elif kind == "effect":
+            self._run_effect(payload)
+            ok = True
         else:
             ok = True
         if not ok:
-            self._disconnected = True
-            if self.on_disconnect:
-                try:
-                    self.on_disconnect()
-                except Exception:
-                    pass
+            self._mark_disc()
         return ok
+
+    def _mark_disc(self) -> None:
+        self._disconnected = True
+        if self.on_disconnect:
+            try:
+                self.on_disconnect()
+            except Exception:
+                pass
+
+    def _leds(self, leds) -> bool:
+        ok = bool(self.robot.send_leds(leds)) if self.robot else False
+        if not ok:
+            self._mark_disc()
+        return ok
+
+    def _run_effect(self, payload) -> None:
+        """LED 페이드인 → 반짝 → 모션 → (유지) → 페이드아웃 → 반짝 → 끄기."""
+        ids = ALL_IDS
+        r, g, b = payload["color"]
+        motion = payload["motion"]
+        hold = payload["hold"]
+        STEP = 8
+        # 페이드 인
+        for k in range(1, STEP + 1):
+            if self._stop.is_set():
+                return
+            f = k / STEP
+            if not self._leds([(i, int(r * f), int(g * f), int(b * f))
+                               for i in ids]):
+                return
+            if self._stop.wait(0.045):
+                return
+        # 반짝(흰색) 후 동작
+        self._leds([(i, 255, 255, 255) for i in ids])
+        if self._stop.wait(0.12):
+            return
+        self._leds([(i, r, g, b) for i in ids])
+        if self._stop.wait(0.05):
+            return
+        if self.robot:
+            self.robot.send_motion(motion)
+        # 동작 유지
+        if self._stop.wait(hold):
+            return
+        # 페이드 아웃
+        for k in range(STEP, -1, -1):
+            if self._stop.is_set():
+                return
+            f = k / STEP
+            if not self._leds([(i, int(r * f), int(g * f), int(b * f))
+                               for i in ids]):
+                return
+            if self._stop.wait(0.045):
+                return
+        # 마지막 반짝 후 끄기
+        self._leds([(i, 255, 255, 255) for i in ids])
+        if self._stop.wait(0.12):
+            return
+        self._leds([(i, 0, 0, 0) for i in ids])
 
     def _send(self, motion: int) -> bool:
         return self._do(("motion", motion))

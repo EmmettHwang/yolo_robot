@@ -47,6 +47,8 @@ import serial.tools.list_ports
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+from motion_table import motion_label, motion_name, ALL_MOTIONS
+
 # ---- Optional dependencies (graceful fallback) ----
 try:
     import cv2
@@ -421,10 +423,12 @@ class PortSelector:
 
         ctrl = tk.Frame(test_row); ctrl.pack(side="left", padx=(12, 0), fill="y")
         mrow = tk.Frame(ctrl); mrow.pack(anchor="w", pady=(2, 4))
-        tk.Label(mrow, text="모션 번호", font=("Malgun Gothic", 9)).pack(side="left")
-        self.motion_spin = tk.Spinbox(mrow, from_=1, to=255, width=5)
-        self.motion_spin.delete(0, "end"); self.motion_spin.insert(0, "19")
-        self.motion_spin.pack(side="left", padx=(6, 0))
+        tk.Label(mrow, text="모션", font=("Malgun Gothic", 9)).pack(side="left")
+        # 번호 + 이름 함께 (직접 번호 입력도 가능)
+        self.motion_combo = ttk.Combobox(
+            mrow, width=22, values=[motion_label(n) for n in ALL_MOTIONS])
+        self.motion_combo.set(motion_label(19))
+        self.motion_combo.pack(side="left", padx=(6, 0))
 
         brow = tk.Frame(ctrl); brow.pack(anchor="w")
         self.motion_test_btn = ttk.Button(
@@ -485,6 +489,16 @@ class PortSelector:
                             outline="#546e7a")                          # 오른팔
         cv.create_rectangle(27, 58, 45, 72, fill="#37474f", outline="") # 가슴 패널
 
+    def _selected_motion(self) -> int:
+        """모션 콤보에서 번호 추출. 'N - 이름' 또는 직접 입력 숫자 모두 허용."""
+        t = self.motion_combo.get().strip()
+        try:
+            if " - " in t:
+                return int(t.split(" - ")[0])
+            return int(t)
+        except Exception:
+            return 19
+
     def _start_motion_test(self) -> None:
         if self._motion_test_running:
             return
@@ -493,10 +507,7 @@ class PortSelector:
                                            fg="#c62828")
             return
         port = self._ports[self.port_combo.current()].device
-        try:
-            motion = int(self.motion_spin.get())
-        except Exception:
-            motion = 19
+        motion = self._selected_motion()
         self._motion_test_running = True
         self._motion_test_cancel.clear()
         # 버튼을 '중지'로 전환 → 멈추고 바로 다음 포트 테스트 가능
@@ -546,8 +557,10 @@ class PortSelector:
                 return
 
             # ② 포트 열림 = SW 연결 성공 (맞는 장치인지는 아직 모름)
+            mname = motion_name(motion)
             self._ui(lambda: self.motion_test_status.config(
-                text=f"② 포트 열림 ✓   모션 {motion} 전송 중...", fg="#1565c0"))
+                text=f"② 포트 열림 ✓   모션 {motion} ({mname}) 전송 중...",
+                fg="#1565c0"))
 
             ok = robot.send_motion(motion)   # write_timeout 으로 무한대기 방지
             if cancel.is_set():

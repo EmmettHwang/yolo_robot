@@ -179,6 +179,7 @@ class MotionGrid(tk.Frame):
                         "sound_value": vvar.get().strip(),
                     }
                     self._refresh()
+                    self._save()        # 편집 즉시 자동 저장
                 except Exception:
                     pass
             top.destroy()
