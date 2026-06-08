@@ -169,10 +169,11 @@ class RecognitionView(ttk.Frame):
         tk.Button(ctrl, text="🎛 로봇 제어", width=10, cursor="hand2",
                   bg="#6a1b9a", fg="white", relief="flat",
                   command=self._open_control_panel).pack(side="left", padx=(8, 0))
+        # 매핑 새로고침 + 자동 시작은 줄 오른쪽 끝으로
         ttk.Button(ctrl, text="↻ 매핑 새로고침", cursor="hand2",
-                   command=self._reload_mapping).pack(side="left", padx=(8, 0))
+                   command=self._reload_mapping).pack(side="right")
         tk.Checkbutton(ctrl, text="자동 시작", variable=self.auto_start,
-                       font=("Malgun Gothic", 9)).pack(side="left", padx=(8, 0))
+                       font=("Malgun Gothic", 9)).pack(side="right", padx=(0, 8))
 
         # --- 둘째 줄: 신뢰도 임계값 / 최대 인식 개수 (위아래로 크게) ---
         ctrl2 = tk.Frame(panel); ctrl2.pack(fill="x", padx=8, pady=(2, 8))
