@@ -180,10 +180,12 @@ class App:
         self.model_status.pack(pady=4)
         self.model_pb = ttk.Progressbar(f, mode="indeterminate", length=320)
         self.model_pb.pack(pady=6)
-        # 로딩 중 식별 가능한 COCO 클래스 쭈루룩 표시
-        self.coco_label = tk.Label(f, text="", font=("Consolas", 13, "bold"),
-                                   fg="#1565c0", bg=BG)
-        self.coco_label.pack(pady=(2, 4))
+        # 로딩 중 식별 가능한 COCO 클래스 — 번호 붙여 10줄 스크롤
+        self.coco_label = tk.Label(f, text="", font=("Consolas", 11),
+                                   fg="#1565c0", bg="white", justify="left",
+                                   anchor="nw", width=30, height=10,
+                                   relief="groove", padx=12, pady=6)
+        self.coco_label.pack(pady=(2, 6))
 
         btns = tk.Frame(f, bg=BG); btns.pack(pady=18)
         tk.Button(btns, text="🧠 학습하기 (수집/학습/교체)",
@@ -292,21 +294,27 @@ class App:
         threading.Thread(target=self._load_worker, daemon=True).start()
 
     def _cycle_coco(self):
-        """로딩 중 COCO 클래스 이름을 하나씩 보여준다. (모델 준비 + 한 바퀴 후 종료)"""
+        """로딩 중 COCO 클래스를 번호 붙여 10줄씩 스크롤. (모델 준비 + 한 바퀴 후 종료)"""
         if self._model_failed:
             return
+        n = len(COCO_CLASSES)
         try:
-            cls = COCO_CLASSES[self._coco_idx % len(COCO_CLASSES)]
-            self.coco_label.config(text=f"🔎  {cls}")
+            start = self._coco_idx % n
+            lines = []
+            for j in range(10):
+                k = (start + j) % n
+                marker = "▶" if j == 0 else " "
+                lines.append(f"{marker}{k + 1:2d}. {COCO_CLASSES[k]}")
+            self.coco_label.config(text="\n".join(lines))
         except Exception:
             return
         self._coco_idx += 1
         self._showcase_count += 1
         # 모델이 준비됐고 한 바퀴(80종) 다 보여줬으면 마무리
-        if self._model_loaded and self._showcase_count >= len(COCO_CLASSES):
+        if self._model_loaded and self._showcase_count >= n:
             self._finish_showcase()
             return
-        self.root.after(80, self._cycle_coco)
+        self.root.after(120, self._cycle_coco)
 
     def _load_worker(self):
         try:
