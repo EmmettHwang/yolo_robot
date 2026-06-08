@@ -1,8 +1,18 @@
 {
   "person": {
     "sound_kind": "mp3",
+    "sound_value": "G:\\내 드라이브\\11. DEV_23\\202605_001 YoloV5WithRobot\\assets\\mp3\\2104 오늘부터우리는.mp3",
+    "motion": 63
+  },
+  "tv": {
+    "sound_kind": "mp3",
     "sound_value": "G:\\내 드라이브\\11. DEV_23\\202605_001 YoloV5WithRobot\\assets\\mp3\\2105 블락비.mp3",
     "motion": 65,
-    "duration": 46.0
+    "duration": 47.0
+  },
+  "mouse": {
+    "sound_kind": "mp3",
+    "sound_value": "G:\\내 드라이브\\11. DEV_23\\202605_001 YoloV5WithRobot\\assets\\mp3\\2106 트와이스.mp3",
+    "motion": 67
   }
 }

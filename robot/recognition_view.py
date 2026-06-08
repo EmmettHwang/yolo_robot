@@ -201,13 +201,15 @@ class RecognitionView(ttk.Frame):
 
         disp = tk.Frame(body); disp.pack(side="left", fill="both", expand=True)
         self.lbl_conn = tk.Label(disp, text="연결: -", anchor="w",
-                                 font=("Malgun Gothic", 10))
+                                 justify="left", font=("Malgun Gothic", 10))
         self.lbl_obj = tk.Label(disp, text="인식: -", anchor="w",
+                                justify="left",
                                 font=("Malgun Gothic", 11, "bold"), fg="#1565c0")
-        self.lbl_motion = tk.Label(disp, text="모션: -", anchor="w",
-                                   font=("Malgun Gothic", 10))
+        self.lbl_motion = tk.Label(disp, text="직전 인식: -", anchor="w",
+                                   justify="left", font=("Malgun Gothic", 10))
         self.lbl_model = tk.Label(disp, text="모델: -", anchor="w",
-                                  font=("Malgun Gothic", 9), fg="#777")
+                                  justify="left", font=("Malgun Gothic", 9),
+                                  fg="#777")
         for w in (self.lbl_conn, self.lbl_obj, self.lbl_motion, self.lbl_model):
             w.pack(fill="x", pady=1)
 
@@ -480,7 +482,7 @@ class RecognitionView(ttk.Frame):
                     f" ({kr})" if kr else "")
                 self.lbl_obj.config(
                     text=f"인식: {name_disp}  {top_conf*100:.0f}%\n"
-                         f"        최초 {_clock(self._cur_start)} · "
+                         f"최초 {_clock(self._cur_start)} · "
                          f"지속 {_dur(now - self._cur_start)}")
             else:
                 self.lbl_obj.config(text="인식: -")
@@ -490,7 +492,7 @@ class RecognitionView(ttk.Frame):
         if self._prev_obj:
             self.lbl_motion.config(
                 text=f"직전 인식: {self._prev_obj}\n"
-                     f"        최초 {_clock(self._prev_start)} · "
+                     f"최초 {_clock(self._prev_start)} · "
                      f"지속 {_dur(self._prev_dur)}")
         else:
             self.lbl_motion.config(text="직전 인식: -")

@@ -43,6 +43,7 @@ except Exception:
 from paths import (
     BASE, DATASET, IMG_DIR, LBL_DIR, CLASSES_TXT, DATA_YAML, MODELS_DIR,
     ACTIVE_MODEL, BASE_WEIGHTS, RUNS_DIR, BEST_WEIGHTS, CONFIG_INI,
+    set_active_name, get_active_name,
 )
 import sound
 
@@ -545,6 +546,7 @@ class TrainWindow:
                             "모델 교체",
                             "이 모델을 인식에 바로 적용(active)할까요?"):
                         shutil.copy(dst, ACTIVE_MODEL)
+                        set_active_name(name)        # 원본 이름 기록
                     messagebox.showinfo("완료",
                                         f"저장됨:\n{dst}\n학습 창을 닫습니다.")
                 except Exception as e:
@@ -588,8 +590,8 @@ class ModelManager:
         self.root.geometry("480x360")
         tk.Label(self.root, text="🔄 모델 교체 / 다운로드", font=_FONT_BIG,
                  pady=8).pack()
-        active = (os.path.basename(open_active())
-                  if os.path.exists(ACTIVE_MODEL) else "없음(기본 yolov5s)")
+        active = (get_active_name() or "active.pt") \
+            if os.path.exists(ACTIVE_MODEL) else "없음(기본 yolov5s)"
         self.active_lbl = tk.Label(
             self.root, text=f"현재 적용(active): {active}",
             font=("Malgun Gothic", 9), fg="#777")
@@ -630,8 +632,8 @@ class ModelManager:
             pass
 
     def _set_active_label(self):
-        active = (os.path.basename(open_active())
-                  if os.path.exists(ACTIVE_MODEL) else "없음")
+        active = (get_active_name() or "active.pt") \
+            if os.path.exists(ACTIVE_MODEL) else "없음"
         self.active_lbl.config(text=f"현재 적용(active): {active}")
 
     def _download_apply(self):
@@ -659,6 +661,7 @@ class ModelManager:
                         break
             if os.path.exists(dst):
                 shutil.copy(dst, ACTIVE_MODEL)
+                set_active_name(fn)        # 원본 이름 기록
                 self._ui(lambda: self.status.config(
                     text=f"✓ 적용됨: {fn} (인식에서 사용)", fg="#2e7d32"))
                 self._ui(self._set_active_label)
@@ -680,16 +683,12 @@ class ModelManager:
             return
         try:
             shutil.copy(path, ACTIVE_MODEL)
+            set_active_name(os.path.basename(path))    # 원본 이름 기록
             self.status.config(text=f"✓ 적용됨: {os.path.basename(path)}",
                                fg="#2e7d32")
             self._set_active_label()
         except Exception as e:
             self.status.config(text=f"✗ 실패: {e}", fg="#c62828")
-
-
-def open_active():
-    """active.pt 가 가리키는(복사된) 원본 표시용 — 단순히 active.pt 경로."""
-    return ACTIVE_MODEL
 
 
 # ============================================================

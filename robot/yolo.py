@@ -16,13 +16,13 @@ import shutil
 import numpy as np
 from ultralytics import YOLO
 
-from paths import ACTIVE_MODEL, BASE_WEIGHTS, MODELS_DIR
+from paths import ACTIVE_MODEL, BASE_WEIGHTS, MODELS_DIR, get_active_name
 
 
 def load_model():
-    """(model, label) 반환. label은 화면 표시용."""
+    """(model, label) 반환. label은 화면 표시용(실제 모델 이름)."""
     if os.path.exists(ACTIVE_MODEL):
-        return YOLO(ACTIVE_MODEL), "학습/교체 모델(active.pt)"
+        return YOLO(ACTIVE_MODEL), (get_active_name() or "active.pt")
     if os.path.exists(BASE_WEIGHTS):
         return YOLO(BASE_WEIGHTS), "기본 yolov5s"
     # 없으면 다운로드 후 model/ 폴더로 복사

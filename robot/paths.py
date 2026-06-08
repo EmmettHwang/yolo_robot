@@ -28,6 +28,7 @@ CLASSES_TXT = os.path.join(DATASET, "classes.txt")
 DATA_YAML = os.path.join(DATASET, "data.yaml")
 MODELS_DIR = os.path.join(BASE, "model")          # 사용자 지정: ./model
 ACTIVE_MODEL = os.path.join(MODELS_DIR, "active.pt")
+ACTIVE_NAME = os.path.join(MODELS_DIR, "active.name")   # active 의 원본 모델 이름
 BASE_WEIGHTS = os.path.join(MODELS_DIR, "yolov5su.pt")  # ultralytics 기본 가중치(model/)
 YOLO_DIR = os.path.join(BASE, "yolov5")
 RUNS_DIR = os.path.join(BASE, "runs")
@@ -52,3 +53,22 @@ def ensure_dirs() -> None:
     """필요한 디렉터리를 만들어 둔다."""
     for d in (DATA_DIR, SOUNDS_DIR, MP3_DIR, MODELS_DIR):
         os.makedirs(d, exist_ok=True)
+
+
+def set_active_name(name: str) -> None:
+    """active.pt 로 적용한 원본 모델 이름을 기록."""
+    try:
+        os.makedirs(MODELS_DIR, exist_ok=True)
+        with open(ACTIVE_NAME, "w", encoding="utf-8") as f:
+            f.write(name or "")
+    except Exception:
+        pass
+
+
+def get_active_name() -> str:
+    """active.pt 의 원본 모델 이름(없으면 None)."""
+    try:
+        with open(ACTIVE_NAME, encoding="utf-8") as f:
+            return f.read().strip() or None
+    except Exception:
+        return None

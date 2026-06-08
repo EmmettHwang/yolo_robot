@@ -297,9 +297,17 @@ class ActionEditor(ttk.Frame):
             labels = [lb for _, lb in self.mp3_items]
             paths = [p for p, _ in self.mp3_items]
             disp = tk.StringVar()
+            row["_mp3_disp"] = disp          # 참조 유지(GC 방지)
             cur = row["val_var"].get()
-            if cur in paths:
-                disp.set(self.mp3_items[paths.index(cur)][1])
+            if cur:
+                if cur in paths:
+                    disp.set(labels[paths.index(cur)])
+                else:
+                    # 경로가 정확히 안 맞아도 파일명으로 매칭/표시(안 보이던 문제 보완)
+                    base = os.path.basename(cur)
+                    matched = next((lb for p, lb in self.mp3_items
+                                    if os.path.basename(p) == base), None)
+                    disp.set(matched or base)
             cb = ttk.Combobox(row["val_holder"], textvariable=disp,
                               state="readonly", width=34,
                               values=labels or ["(assets/mp3 비어있음)"])
