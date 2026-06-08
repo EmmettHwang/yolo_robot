@@ -1,0 +1,395 @@
+# coding: utf-8
+"""
+recognition_view.py
+===================
+인식 화면 (tkinter). 상단=카메라+YOLO, 하단=메뉴/디스플레이 + 조이스틱 + 4×4 그리드.
+
+- 카메라/추론은 백그라운드 스레드, 화면 갱신은 tk after 루프 → UI 안 멈춤.
+- 인식 트리거: 가장 confidence 높은 1개, 직전 동작 객체와 같으면 무시, 쿨다운.
+- 객체→동작/사운드 매핑(object_actions)으로 모션 전송 + 사운드.
+- 조이스틱(8방향)/그리드(4×4) 수동 조작.
+- 로봇 연결 끊김 감지 → 알림 후 정지.
+"""
+
+import time
+import threading
+import configparser
+
+import cv2
+import numpy as np
+import tkinter as tk
+from tkinter import ttk, messagebox
+from PIL import Image, ImageTk
+
+import hangul
+import yolo as yolo_mod
+import sound as snd
+import object_actions
+from paths import CONFIG_INI
+from robot_controller import HumanoidRobot
+from motion import MotionRunner
+from motion_table import FORWARD_SEQUENCE, BACKWARD_SEQUENCE
+
+CONF_THRESHOLD = 0.60
+INFER_EVERY = 2
+INFER_SIZE = 320
+PING_EVERY = 30
+TRIGGER_COOLDOWN = 4.0      # 같은 트리거 반복 방지(초)
+
+# 조이스틱 방향 → 모션 시퀀스 (홀드 시 500ms 간격 반복)
+DIR_SEQ = {
+    "N": FORWARD_SEQUENCE, "S": BACKWARD_SEQUENCE,
+    "W": [5], "E": [6], "NW": [12], "NE": [13], "SW": [7], "SE": [8],
+}
+
+
+def _read_config():
+    cfg = configparser.ConfigParser()
+    try:
+        cfg.read(CONFIG_INI, encoding="utf-8")
+        s = cfg["SETTINGS"]
+        port = s.get("last_port") or None
+        cam = s.get("last_camera_index")
+        cam = int(cam) if cam not in (None, "") else 0
+        return port, cam
+    except Exception:
+        return None, 0
+
+
+class RecognitionView(ttk.Frame):
+    def __init__(self, master, **kw):
+        super().__init__(master, **kw)
+        self.robot = None
+        self.model = None
+        self.model_label = "-"
+        self.cap = None
+        self.runner = None
+        self.player = snd.player
+        self.mapping = object_actions.load_actions()
+
+        self.yolo_on = True
+        self.sound_on = True
+        self.running = False
+        self._lock = threading.Lock()
+        self._frame = None
+        self._dets = np.empty((0, 6))
+        self._disconnected = False
+        self._worker = None
+        self._after_id = None
+        self._imgtk = None
+        self._fcount = 0
+        self._last_acted = ""
+        self._last_trigger = 0.0
+        self._empty = 0
+
+        self._build()
+
+    # ============================================================
+    # UI
+    # ============================================================
+    def _build(self):
+        # 상단: 카메라
+        self.canvas = tk.Canvas(self, width=640, height=400, bg="#111111",
+                                highlightthickness=0, cursor="hand2")
+        self.canvas.pack(fill="both", expand=True, padx=6, pady=6)
+        self.img_id = self.canvas.create_image(320, 200, anchor="center")
+        self.canvas.create_text(320, 200, text="‘연결 & 시작’을 누르세요",
+                                fill="#888", font=("Malgun Gothic", 13),
+                                tags="hint")
+
+        # 하단 패널
+        panel = ttk.LabelFrame(self, text="  제어 / 디스플레이  ")
+        panel.pack(fill="x", padx=6, pady=(0, 6))
+
+        # --- 상단 컨트롤 줄 ---
+        ctrl = tk.Frame(panel); ctrl.pack(fill="x", padx=8, pady=6)
+        self.start_btn = tk.Button(
+            ctrl, text="▶ 연결 & 시작", bg="#28a745", fg="white",
+            relief="flat", cursor="hand2", font=("Malgun Gothic", 10, "bold"),
+            command=self.toggle_start)
+        self.start_btn.pack(side="left")
+        self.yolo_btn = tk.Button(
+            ctrl, text="YOLO: ON", width=10, cursor="hand2",
+            command=self._toggle_yolo)
+        self.yolo_btn.pack(side="left", padx=(8, 0))
+        self.sound_btn = tk.Button(
+            ctrl, text="사운드: ON", width=10, cursor="hand2",
+            command=self._toggle_sound)
+        self.sound_btn.pack(side="left", padx=(8, 0))
+        ttk.Button(ctrl, text="↻ 매핑 새로고침", cursor="hand2",
+                   command=self._reload_mapping).pack(side="left", padx=(8, 0))
+
+        # --- 본문: 조이스틱 | 디스플레이 | 그리드 ---
+        body = tk.Frame(panel); body.pack(fill="x", padx=8, pady=(0, 8))
+
+        from joystick import Joystick           # 지연 import (순환 방지)
+        from motion_grid import MotionGrid
+
+        jwrap = tk.Frame(body); jwrap.pack(side="left", padx=(0, 10))
+        tk.Label(jwrap, text="조이스틱 (8방향)",
+                 font=("Malgun Gothic", 9, "bold")).pack()
+        self.joy = Joystick(jwrap, size=180, on_change=self._on_joystick)
+        self.joy.pack()
+
+        disp = tk.Frame(body); disp.pack(side="left", fill="both", expand=True)
+        self.lbl_conn = tk.Label(disp, text="연결: -", anchor="w",
+                                 font=("Malgun Gothic", 10))
+        self.lbl_obj = tk.Label(disp, text="인식: -", anchor="w",
+                                font=("Malgun Gothic", 11, "bold"), fg="#1565c0")
+        self.lbl_motion = tk.Label(disp, text="모션: -", anchor="w",
+                                   font=("Malgun Gothic", 10))
+        self.lbl_model = tk.Label(disp, text="모델: -", anchor="w",
+                                  font=("Malgun Gothic", 9), fg="#777")
+        for w in (self.lbl_conn, self.lbl_obj, self.lbl_motion, self.lbl_model):
+            w.pack(fill="x", pady=1)
+
+        gwrap = tk.Frame(body); gwrap.pack(side="left", padx=(10, 0))
+        tk.Label(gwrap, text="동작 버튼 (4×4)",
+                 font=("Malgun Gothic", 9, "bold")).pack()
+        self.grid = MotionGrid(gwrap, on_motion=self._on_grid)
+        self.grid.pack()
+
+    # ============================================================
+    # 시작 / 정지
+    # ============================================================
+    def toggle_start(self):
+        if self.running:
+            self.stop()
+        else:
+            self.start()
+
+    def start(self):
+        port, cam = _read_config()
+        if not port:
+            messagebox.showwarning(
+                "알림", "포트가 설정되지 않았습니다.\n'포트/장치 설정' 탭에서 먼저 선택하세요.")
+            return
+        try:
+            self.robot = HumanoidRobot(port, 115200)
+            self.robot.connect()
+        except Exception as e:
+            messagebox.showerror("연결 실패", f"{port} 연결 실패:\n{e}")
+            self.robot = None
+            return
+        try:
+            self.model, self.model_label = yolo_mod.load_model()
+            self.model.eval()
+            yolo_mod.warmup(self.model, INFER_SIZE)
+        except Exception as e:
+            messagebox.showerror("모델 로드 실패", str(e))
+            self._cleanup()
+            return
+        backend = cv2.CAP_DSHOW if hasattr(cv2, "CAP_DSHOW") else 0
+        self.cap = None
+        for _ in range(5):
+            self.cap = cv2.VideoCapture(cam, backend)
+            if self.cap.isOpened():
+                break
+            self.cap.release(); time.sleep(0.3)
+        if self.cap is None or not self.cap.isOpened():
+            messagebox.showerror("카메라 실패", f"카메라({cam})를 열 수 없습니다.")
+            self._cleanup()
+            return
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        self.mapping = object_actions.load_actions()
+        self.runner = MotionRunner(self.robot, on_disconnect=self._on_disc)
+        self._disconnected = False
+        self._last_acted = ""
+        self._fcount = 0
+        self.running = True
+        self.start_btn.config(text="■ 정지", bg="#c62828")
+        self.canvas.delete("hint")
+
+        self._stop_flag = threading.Event()
+        self._worker = threading.Thread(target=self._loop, daemon=True)
+        self._worker.start()
+        self._schedule_render()
+
+    def stop(self):
+        self.running = False
+        if hasattr(self, "_stop_flag"):
+            self._stop_flag.set()
+        if self._worker is not None:
+            self._worker.join(timeout=1.0)
+            self._worker = None
+        if self._after_id is not None:
+            try:
+                self.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
+        self._cleanup()
+        self.start_btn.config(text="▶ 연결 & 시작", bg="#28a745")
+        self.lbl_conn.config(text="연결: 정지됨")
+
+    def _cleanup(self):
+        if self.runner is not None:
+            self.runner.close(); self.runner = None
+        if self.cap is not None:
+            try:
+                self.cap.release()
+            except Exception:
+                pass
+            self.cap = None
+        if self.robot is not None:
+            try:
+                self.robot.close()
+            except Exception:
+                pass
+            self.robot = None
+
+    def _on_disc(self):
+        self._disconnected = True
+
+    # ============================================================
+    # 워커 (카메라 + 추론 + 트리거)
+    # ============================================================
+    def _loop(self):
+        while not self._stop_flag.is_set():
+            ok, frame = self.cap.read()
+            if not ok or frame is None:
+                time.sleep(0.03)
+                continue
+            self._fcount += 1
+
+            if self._fcount % PING_EVERY == 0 and self.robot \
+                    and not self.robot.ping():
+                self._disconnected = True
+                break
+
+            if self.yolo_on and self._fcount % INFER_EVERY == 0:
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                res = self.model(rgb, size=INFER_SIZE)
+                dets = res.xyxy[0].cpu().numpy()
+                with self._lock:
+                    self._dets = dets
+                self._handle_triggers(dets)
+            elif not self.yolo_on:
+                with self._lock:
+                    self._dets = np.empty((0, 6))
+
+            with self._lock:
+                self._frame = frame
+
+    def _handle_triggers(self, dets):
+        top_label, top_conf = "", 0.0
+        for det in dets:
+            conf = float(det[4]); cid = int(det[5])
+            if conf > top_conf:
+                top_conf = conf; top_label = self.model.names[cid]
+
+        now = time.time()
+        if (top_label and top_conf >= CONF_THRESHOLD
+                and top_label != self._last_acted
+                and now - self._last_trigger > TRIGGER_COOLDOWN):
+            runner = self.runner
+            player = self.player if self.sound_on else None
+            if object_actions.perform(top_label, runner, player, self.mapping):
+                self._last_acted = top_label
+                self._last_trigger = now
+
+        if top_label == "" or top_conf < CONF_THRESHOLD:
+            self._empty += 1
+            if self._empty > 20:
+                self._last_acted = ""
+        else:
+            self._empty = 0
+
+    # ============================================================
+    # 렌더 루프 (메인 스레드)
+    # ============================================================
+    def _schedule_render(self):
+        self._render()
+        self._after_id = self.after(33, self._schedule_render)
+
+    def _render(self):
+        if self._disconnected:
+            self.stop()
+            messagebox.showwarning(
+                "로봇 연결 끊김",
+                "로봇 연결이 끊어졌습니다.\n'포트/장치 설정'에서 다시 선택 후 시작하세요.")
+            return
+        with self._lock:
+            frame = None if self._frame is None else self._frame.copy()
+            dets = self._dets
+        if frame is not None:
+            top_label, top_conf = "", 0.0
+            hud = []
+            for det in dets:
+                x1, y1, x2, y2 = (int(det[0]), int(det[1]),
+                                  int(det[2]), int(det[3]))
+                conf = float(det[4]); name = self.model.names[int(det[5])]
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 200, 0), 2)
+                hud.append(hangul.outlined(f"{name} {conf*100:.0f}%",
+                                           (x1 + 2, max(0, y1 - 22)), 16,
+                                           color=(0, 0, 0),
+                                           outline=(255, 255, 255)))
+                if conf > top_conf:
+                    top_conf = conf; top_label = name
+            frame = hangul.draw_texts(frame, hud)
+
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            cw = max(self.canvas.winfo_width(), 320)
+            ch = max(self.canvas.winfo_height(), 240)
+            h, w = rgb.shape[:2]
+            scale = min(cw / w, ch / h)
+            rgb = cv2.resize(rgb, (int(w * scale), int(h * scale)))
+            self._imgtk = ImageTk.PhotoImage(Image.fromarray(rgb))
+            self.canvas.itemconfig(self.img_id, image=self._imgtk)
+            self.canvas.coords(self.img_id, cw // 2, ch // 2)
+
+            self.lbl_obj.config(
+                text=f"인식: {top_label} ({top_conf*100:.0f}%)"
+                if top_label else "인식: -")
+
+        self.lbl_conn.config(
+            text=f"연결: {'정상' if self.robot and self.robot.is_connected else '-'}")
+        self.lbl_motion.config(
+            text=f"직전 동작 객체: {self._last_acted or '-'}")
+        self.lbl_model.config(text=f"모델: {self.model_label}")
+
+    # ============================================================
+    # 컨트롤 콜백
+    # ============================================================
+    def _toggle_yolo(self):
+        self.yolo_on = not self.yolo_on
+        self.yolo_btn.config(text=f"YOLO: {'ON' if self.yolo_on else 'OFF'}")
+
+    def _toggle_sound(self):
+        self.sound_on = not self.sound_on
+        self.sound_btn.config(
+            text=f"사운드: {'ON' if self.sound_on else 'OFF'}")
+
+    def _reload_mapping(self):
+        self.mapping = object_actions.load_actions()
+        messagebox.showinfo("새로고침", "객체 반응 매핑을 다시 불러왔습니다.")
+
+    def _on_joystick(self, direction):
+        if not self.runner:
+            return
+        if direction is None:
+            self.runner.stop_sequence(return_ready=True)
+        elif direction in DIR_SEQ:
+            self.runner.start_sequence(DIR_SEQ[direction])
+
+    def _on_grid(self, motion):
+        if self.runner:
+            self.runner.send_once(motion)
+        else:
+            messagebox.showinfo("알림", "먼저 '연결 & 시작'을 누르세요.")
+
+    def on_close(self):
+        if self.running:
+            self.stop()
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    root.title("인식 (단독 실행)")
+    root.geometry("760x720")
+    view = RecognitionView(root)
+    view.pack(fill="both", expand=True)
+    root.protocol("WM_DELETE_WINDOW",
+                  lambda: (view.on_close(), root.destroy()))
+    root.mainloop()

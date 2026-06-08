@@ -20,5 +20,13 @@ pillow>=9.0.0
 # --- 로봇 시리얼 제어용 ---
 pyserial>=3.5
 
+# --- 오디오: 마이크 레벨/녹음·재생, 동작 사운드 ---
+sounddevice>=0.4.6      # 마이크 VU / 녹음·재생, 스피커 테스트
+pygame>=2.6.0           # 동작 사운드 mp3 재생
+pyttsx3>=2.99           # 오프라인 TTS (Windows SAPI)
+
+# --- (선택) 카메라 실제 이름 표시 (Windows) ---
+# pygrabber
+
 # tkinter, configparser, threading, os, time 은 표준 라이브러리이므로 별도 설치 불필요.
 # (Linux에서 tkinter가 없을 경우: sudo apt install python3-tk)

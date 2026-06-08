@@ -45,7 +45,14 @@
       "Bash(git config *)",
       "PowerShell($gh = Get-Command gh -ErrorAction SilentlyContinue; if \\($gh\\) { \"gh: $\\($gh.Source\\)\"; gh auth status } else { \"gh: NOT FOUND\" }; \"--- git credential helper ---\"; git config --global credential.helper; \"--- git version ---\"; git --version)",
       "Bash(git init *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(D:/miniconda3/envs/yolo_robot/python.exe -m pip install pyttsx3 pygame)",
+      "Bash(D:/miniconda3/envs/yolo_robot/python.exe -m py_compile paths.py hangul.py motion_table.py motion.py sound.py object_actions.py joystick.py motion_grid.py)",
+      "Bash(D:/miniconda3/envs/yolo_robot/python.exe -m py_compile app.py recognition_view.py yolo.py joystick.py motion_grid.py object_actions.py sound.py motion.py motion_table.py hangul.py paths.py)",
+      "Bash(D:/miniconda3/envs/yolo_robot/python.exe -c \"import main; print\\('main import OK \\(entry -> App\\)'\\)\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\mynos\\AppData\\Roaming\\Code\\User"
