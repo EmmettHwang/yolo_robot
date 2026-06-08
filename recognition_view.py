@@ -62,6 +62,8 @@ class RecognitionView(ttk.Frame):
         self.robot = None
         self.model = None
         self.model_label = "-"
+        self._pre_model = None        # app에서 미리 로드해 넘겨준 모델
+        self._pre_label = None
         self.cap = None
         self.runner = None
         self.player = snd.player
@@ -124,6 +126,7 @@ class RecognitionView(ttk.Frame):
 
         from joystick import Joystick           # 지연 import (순환 방지)
         from motion_grid import MotionGrid
+        self._MotionGrid = MotionGrid
 
         jwrap = tk.Frame(body); jwrap.pack(side="left", padx=(0, 10))
         tk.Label(jwrap, text="조이스틱 (8방향)",
@@ -146,7 +149,7 @@ class RecognitionView(ttk.Frame):
         gwrap = tk.Frame(body); gwrap.pack(side="left", padx=(10, 0))
         tk.Label(gwrap, text="동작 버튼 (4×4)",
                  font=("Malgun Gothic", 9, "bold")).pack()
-        self.grid = MotionGrid(gwrap, on_motion=self._on_grid)
+        self.grid = MotionGrid(gwrap, on_action=self._on_grid)
         self.grid.pack()
 
     # ============================================================
@@ -171,14 +174,18 @@ class RecognitionView(ttk.Frame):
             messagebox.showerror("연결 실패", f"{port} 연결 실패:\n{e}")
             self.robot = None
             return
-        try:
-            self.model, self.model_label = yolo_mod.load_model()
-            self.model.eval()
-            yolo_mod.warmup(self.model, INFER_SIZE)
-        except Exception as e:
-            messagebox.showerror("모델 로드 실패", str(e))
-            self._cleanup()
-            return
+        if self._pre_model is not None:
+            self.model = self._pre_model              # 앱에서 미리 로드한 모델 재사용
+            self.model_label = self._pre_label or "-"
+        else:
+            try:
+                self.model, self.model_label = yolo_mod.load_model()
+                self.model.eval()
+                yolo_mod.warmup(self.model, INFER_SIZE)
+            except Exception as e:
+                messagebox.showerror("모델 로드 실패", str(e))
+                self._cleanup()
+                return
         backend = cv2.CAP_DSHOW if hasattr(cv2, "CAP_DSHOW") else 0
         self.cap = None
         for _ in range(5):
@@ -373,11 +380,20 @@ class RecognitionView(ttk.Frame):
         elif direction in DIR_SEQ:
             self.runner.start_sequence(DIR_SEQ[direction])
 
-    def _on_grid(self, motion):
-        if self.runner:
-            self.runner.send_once(motion)
-        else:
+    def set_preloaded(self, model, label):
+        """app에서 미리 로드한 모델을 넘겨받아 start() 시 재사용."""
+        self._pre_model = model
+        self._pre_label = label
+
+    def _on_grid(self, entry):
+        """그리드 버튼: 모션 전송 + (지정 시) 사운드 재생."""
+        if not self.runner:
             messagebox.showinfo("알림", "먼저 '연결 & 시작'을 누르세요.")
+            return
+        self.runner.send_once(entry.get("motion", 1))
+        kind = entry.get("sound_kind", snd.NONE)
+        if self.sound_on and kind and kind != snd.NONE:
+            self.player.play(kind, entry.get("sound_value", ""))
 
     def on_close(self):
         if self.running:

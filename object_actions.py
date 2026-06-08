@@ -91,14 +91,19 @@ class ActionEditor(ttk.Frame):
                  "(객체·모션은 중복 없이 선택)",
                  font=("Malgun Gothic", 9), fg="#666").pack()
 
-        # 추가 줄
+        # 추가 줄 (검색 + 드롭다운)
         add = tk.Frame(self); add.pack(fill="x", padx=12, pady=8)
-        tk.Label(add, text="객체 추가:", font=("Malgun Gothic", 10)).pack(
+        tk.Label(add, text="객체 검색:", font=("Malgun Gothic", 10)).pack(
             side="left")
+        self.search_var = tk.StringVar()
+        se = tk.Entry(add, textvariable=self.search_var, width=14)
+        se.pack(side="left", padx=(4, 6))
+        self.search_var.trace_add("write",
+                                  lambda *a: self._refresh_add_combo())
         self.add_var = tk.StringVar()
         self.add_combo = ttk.Combobox(add, textvariable=self.add_var,
-                                      state="readonly", width=24)
-        self.add_combo.pack(side="left", padx=(6, 6))
+                                      state="readonly", width=22)
+        self.add_combo.pack(side="left", padx=(0, 6))
         tk.Button(add, text="+ 추가", bg="#1565c0", fg="white", relief="flat",
                   cursor="hand2", command=self._add_selected).pack(side="left")
         tk.Button(add, text="↻ mp3/목록 새로고침", cursor="hand2",
@@ -171,11 +176,15 @@ class ActionEditor(ttk.Frame):
 
     def _refresh_add_combo(self):
         avail = self._available_objects()
+        q = self.search_var.get().strip().lower() \
+            if hasattr(self, "search_var") else ""
+        if q:
+            avail = [o for o in avail if q in o.lower()]
         self.add_combo["values"] = avail
         if avail:
             self.add_combo.current(0)
         else:
-            self.add_var.set("(모든 객체 지정됨)")
+            self.add_var.set("(검색결과 없음)" if q else "(모든 객체 지정됨)")
 
     def _refresh_motion_combos(self):
         for r in self.rows:

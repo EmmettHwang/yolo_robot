@@ -51,9 +51,11 @@ def read_meta(path: str) -> dict:
 
 def label_for(path: str) -> str:
     m = read_meta(path)
+    fname = os.path.basename(path)
     artist = f" - {m['artist']}" if m["artist"] else ""
     dur = f" ({_fmt_dur(m['duration'])})" if m["duration"] else ""
-    return f"{m['title']}{artist}{dur}"
+    # 파일이름도 함께 표시 (요청)
+    return f"{fname}  |  {m['title']}{artist}{dur}"
 
 
 def list_mp3() -> list:

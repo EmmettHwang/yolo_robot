@@ -1,7 +1,7 @@
 {
   "person": {
-    "sound_kind": "tts",
-    "sound_value": "안녕하세요",
-    "motion": 18
+    "sound_kind": "mp3",
+    "sound_value": "g:\\내 드라이브\\11. DEV_23\\202605_001 YoloV5WithRobot\\assets\\mp3\\1606.mp3",
+    "motion": 63
   }
 }

@@ -4,63 +4,64 @@ app.py
 ======
 YOLOv5 휴머노이드 로봇 — 탭 메인 윈도우 (진입점).
 
-탭:
-  ⚙ 포트/장치 설정 : port_selector.py 를 별도 창으로 실행
-  🧠 로봇 학습     : trainer.py 를 별도 창으로 실행
-  🎯 객체 반응     : object_actions.ActionEditor (임베드)
-  ▶ 인식 시작      : recognition_view.RecognitionView (임베드)
+시퀀스 흐름(쭈욱 진행되는 느낌):
+  ① 포트·장치 : 저장된 설정을 자동 검증/표시. 정상이면 잠시 후 자동으로 다음 탭.
+                문제 있을 때만 '장치 설정 열기'.
+  ② 로봇 학습 : 진입 시 YOLOv5 모델을 백그라운드 로딩(애니메이션). 완료되면
+                '학습하기' / '다음 → 인식 시작' 활성화. (로드한 모델은 인식에서 재사용)
+  ③ 객체 반응 : object_actions.ActionEditor
+  ④ 인식 시작 : recognition_view.RecognitionView
 """
 
 import os
 import sys
+import threading
 import configparser
 import subprocess
 
 import tkinter as tk
 from tkinter import ttk
 
-from paths import BASE, CONFIG_INI, ensure_dirs
+import serial.tools.list_ports as list_ports
+from PIL import Image, ImageTk
+
+from paths import BASE, CONFIG_INI, LOGO_PATH, ensure_dirs
 import trainer
+import yolo as yolo_mod
 from object_actions import ActionEditor
 from recognition_view import RecognitionView
 
 PY = sys.executable
-
 BG = "#f4f6fa"
 HEADER_BG = "#1e2a4a"
 ACCENT = "#1565c0"
 
 
-def _launch(script: str) -> None:
+def _launch(script):
     subprocess.Popen([PY, os.path.join(BASE, script)], cwd=BASE)
 
 
-def _current_config() -> str:
+def _read_cfg():
     cfg = configparser.ConfigParser()
     try:
         cfg.read(CONFIG_INI, encoding="utf-8")
         s = cfg["SETTINGS"]
-        return (f"🔌 포트 {s.get('last_port') or '-'}    "
-                f"📷 카메라 {s.get('last_camera_index') or '-'}    "
-                f"🎤 마이크 {s.get('last_audio_in_index') or '-'}")
+        port = s.get("last_port") or None
+        cam = s.get("last_camera_index")
+        return port, (cam if cam not in (None, "") else "0")
     except Exception:
-        return "저장된 설정이 없습니다. ‘장치 설정 열기’에서 선택하세요."
+        return None, "0"
 
 
-def _card(parent, icon, title, desc, btn_text, cmd, color):
-    c = tk.Frame(parent, bg="white", highlightbackground="#dde3ee",
-                 highlightthickness=1)
-    tk.Label(c, text=icon, font=("Segoe UI Emoji", 44), bg="white").pack(
-        pady=(20, 4))
-    tk.Label(c, text=title, font=("Malgun Gothic", 15, "bold"),
-             bg="white").pack()
-    tk.Label(c, text=desc, font=("Malgun Gothic", 9), fg="#667", bg="white",
-             justify="center").pack(pady=(4, 12))
-    tk.Button(c, text=btn_text, bg=color, fg="white", relief="flat",
-              cursor="hand2", font=("Malgun Gothic", 12, "bold"), height=2,
-              activebackground=color, command=cmd).pack(
-        fill="x", padx=24, pady=(0, 20))
-    return c
+def _validate_devices():
+    """(ok, message). 저장된 포트가 실제 연결 목록에 있는지 확인."""
+    port, cam = _read_cfg()
+    if not port:
+        return False, "포트가 설정되지 않았습니다. ‘장치 설정 열기’에서 선택하세요."
+    avail = [p.device for p in list_ports.comports()]
+    if port not in avail:
+        return False, f"{port} 가 연결 목록에 없습니다. 로봇 전원/페어링 확인 후 다시 설정."
+    return True, f"✓ 포트 {port} · 카메라 {cam} 확인됨"
 
 
 class App:
@@ -68,28 +69,31 @@ class App:
         ensure_dirs()
         self.root = tk.Tk()
         self.root.title("YOLOv5 휴머노이드 로봇")
-        self.root.geometry("860x820")
+        self.root.geometry("880x840")
         self.root.configure(bg=BG)
         self._style()
 
-        # 헤더 배너
-        header = tk.Frame(self.root, bg=HEADER_BG, height=64)
-        header.pack(fill="x"); header.pack_propagate(False)
-        tk.Label(header, text="🤖  YOLOv5 휴머노이드 로봇 컨트롤",
-                 font=("Malgun Gothic", 17, "bold"), fg="white",
-                 bg=HEADER_BG).pack(side="left", padx=20)
-        tk.Label(header, text="MRT 라인코어 스마트", font=("Malgun Gothic", 10),
-                 fg="#9fb3d8", bg=HEADER_BG).pack(side="right", padx=20)
+        self.model = None
+        self.model_label = None
+        self._model_loading = False
+        self._model_loaded = False
 
-        nb = ttk.Notebook(self.root)
-        nb.pack(fill="both", expand=True, padx=8, pady=8)
-        nb.add(self._tab_devices(nb), text="  ⚙  포트·장치  ")
-        nb.add(self._tab_training(nb), text="  🧠  로봇 학습  ")
-        nb.add(self._tab_actions(nb), text="  🎯  객체 반응  ")
-        self.rec_view = RecognitionView(nb)
-        nb.add(self.rec_view, text="  ▶  인식 시작  ")
+        self._header()
+
+        self.nb = ttk.Notebook(self.root)
+        self.nb.pack(fill="both", expand=True, padx=8, pady=8)
+        self.tab_dev = self._tab_devices(self.nb)
+        self.tab_train = self._tab_training(self.nb)
+        self.tab_act = self._tab_actions(self.nb)
+        self.rec_view = RecognitionView(self.nb)
+        self.nb.add(self.tab_dev, text="  ①  ⚙ 포트·장치  ")
+        self.nb.add(self.tab_train, text="  ②  🧠 로봇 학습  ")
+        self.nb.add(self.tab_act, text="  🎯 객체 반응  ")
+        self.nb.add(self.rec_view, text="  ④  ▶ 인식 시작  ")
+        self.nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.root.after(400, self._start_flow)   # 시퀀스 시작
 
     def _style(self):
         st = ttk.Style()
@@ -99,53 +103,143 @@ class App:
             pass
         st.configure("TNotebook", background=BG, borderwidth=0)
         st.configure("TNotebook.Tab", font=("Malgun Gothic", 12, "bold"),
-                     padding=(20, 10), background="#dfe5f0")
-        st.map("TNotebook.Tab",
-               background=[("selected", ACCENT)],
+                     padding=(18, 10), background="#dfe5f0")
+        st.map("TNotebook.Tab", background=[("selected", ACCENT)],
                foreground=[("selected", "white")])
         st.configure("TFrame", background=BG)
+
+    def _header(self):
+        header = tk.Frame(self.root, bg=HEADER_BG, height=66)
+        header.pack(fill="x"); header.pack_propagate(False)
+        tk.Label(header, text="🤖  YOLOv5 휴머노이드 로봇 컨트롤",
+                 font=("Malgun Gothic", 17, "bold"), fg="white",
+                 bg=HEADER_BG).pack(side="left", padx=20)
+        try:
+            img = Image.open(LOGO_PATH)
+            h = 46
+            w = max(1, int(img.width * h / img.height))
+            self._logo = ImageTk.PhotoImage(img.resize((w, h)))
+            tk.Label(header, image=self._logo, bg=HEADER_BG).pack(
+                side="right", padx=20)
+        except Exception:
+            tk.Label(header, text="MRT 라인코어 스마트",
+                     font=("Malgun Gothic", 10), fg="#9fb3d8",
+                     bg=HEADER_BG).pack(side="right", padx=20)
 
     # ---------- 탭: 포트/장치 ----------
     def _tab_devices(self, nb):
         f = ttk.Frame(nb)
-        self.cfg_label = tk.Label(
-            f, text=_current_config(), font=("Malgun Gothic", 11, "bold"),
-            fg=ACCENT, bg=BG, pady=14)
-        self.cfg_label.pack(pady=(18, 0))
+        tk.Label(f, text="① 포트 / 장치 확인", font=("Malgun Gothic", 16, "bold"),
+                 bg=BG).pack(pady=(26, 6))
+        self.dev_status = tk.Label(f, text="확인 중...",
+                                   font=("Malgun Gothic", 12, "bold"),
+                                   fg=ACCENT, bg=BG)
+        self.dev_status.pack(pady=4)
 
-        card = _card(
-            f, "🔧", "포트 / 장치 설정",
-            "시리얼(로봇)·카메라·마이크·스피커를 선택하고\n"
-            "동작 테스트·녹음/재생까지 한 곳에서.",
-            "장치 설정 열기", lambda: _launch("port_selector.py"), ACCENT)
-        card.pack(padx=80, pady=16, fill="x")
-
-        tk.Button(f, text="↻ 현재 설정 새로고침", cursor="hand2", bg=BG,
-                  relief="flat", fg="#555",
-                  command=lambda: self.cfg_label.config(
-                      text=_current_config())).pack()
+        btns = tk.Frame(f, bg=BG); btns.pack(pady=16)
+        tk.Button(btns, text="🔧 장치 설정 열기", font=("Malgun Gothic", 11, "bold"),
+                  bg="#607d8b", fg="white", relief="flat", cursor="hand2",
+                  height=2, width=18,
+                  command=lambda: _launch("port_selector.py")).pack(side="left",
+                                                                    padx=6)
+        tk.Button(btns, text="↻ 다시 확인", font=("Malgun Gothic", 11),
+                  cursor="hand2", height=2, width=12,
+                  command=self._check_devices).pack(side="left", padx=6)
+        self.dev_next = tk.Button(
+            btns, text="다음 → 로봇 학습 ▶", font=("Malgun Gothic", 11, "bold"),
+            bg=ACCENT, fg="white", relief="flat", cursor="hand2", height=2,
+            width=18, command=lambda: self.nb.select(self.tab_train))
+        self.dev_next.pack(side="left", padx=6)
         return f
 
     # ---------- 탭: 로봇 학습 ----------
     def _tab_training(self, nb):
         f = ttk.Frame(nb)
-        card = _card(
-            f, "🧠", "로봇 학습",
-            "카메라로 데이터를 수집하고(1이미지=1객체)\n학습한 뒤 모델을 교체합니다.",
-            "데이터 수집 / 학습 / 교체 열기",
-            lambda: _launch("trainer.py"), "#6a1b9a")
-        card.pack(padx=80, pady=(30, 16), fill="x")
+        tk.Label(f, text="② 로봇 학습", font=("Malgun Gothic", 16, "bold"),
+                 bg=BG).pack(pady=(26, 6))
+
+        self.model_status = tk.Label(
+            f, text="YOLOv5 모델 로딩 준비...", font=("Malgun Gothic", 12, "bold"),
+            fg="#ef6c00", bg=BG)
+        self.model_status.pack(pady=4)
+        self.model_pb = ttk.Progressbar(f, mode="indeterminate", length=320)
+        self.model_pb.pack(pady=6)
+
+        btns = tk.Frame(f, bg=BG); btns.pack(pady=18)
+        tk.Button(btns, text="🧠 학습하기 (수집/학습/교체)",
+                  font=("Malgun Gothic", 11, "bold"), bg="#6a1b9a", fg="white",
+                  relief="flat", cursor="hand2", height=2, width=24,
+                  command=lambda: _launch("trainer.py")).pack(side="left",
+                                                              padx=6)
+        self.train_next = tk.Button(
+            btns, text="다음 → 인식 시작 ▶", font=("Malgun Gothic", 11, "bold"),
+            bg="#9e9e9e", fg="white", relief="flat", height=2, width=18,
+            state="disabled",
+            command=lambda: self.nb.select(self.rec_view))
+        self.train_next.pack(side="left", padx=6)
+
         tk.Label(f, text="※ 학습은 CPU라 느립니다. 클래스당 20~50장, 에폭 10~30 권장.",
-                 font=("Malgun Gothic", 9), fg="#999", bg=BG).pack()
+                 font=("Malgun Gothic", 9), fg="#999", bg=BG).pack(pady=(8, 0))
         return f
 
     # ---------- 탭: 객체 반응 ----------
     def _tab_actions(self, nb):
         f = ttk.Frame(nb)
-        classes = trainer.load_classes()
-        editor = ActionEditor(f, class_names=classes)
+        editor = ActionEditor(f, class_names=trainer.load_classes())
         editor.pack(fill="both", expand=True)
         return f
+
+    # ============================================================
+    # 시퀀스 흐름
+    # ============================================================
+    def _start_flow(self):
+        self._check_devices(auto_advance=True)
+
+    def _check_devices(self, auto_advance=False):
+        ok, msg = _validate_devices()
+        self.dev_status.config(text=msg, fg=("#2e7d32" if ok else "#c62828"))
+        if ok and auto_advance:
+            # 문제 없으면 잠시 후 자동으로 로봇 학습 탭으로
+            self.root.after(1400, lambda: self.nb.select(self.tab_train))
+
+    def _on_tab_changed(self, _evt):
+        try:
+            current = self.nb.nametowidget(self.nb.select())
+        except Exception:
+            return
+        if current is self.tab_train:
+            self._load_model_async()
+
+    def _load_model_async(self):
+        if self._model_loaded or self._model_loading:
+            return
+        self._model_loading = True
+        self.model_status.config(text="⏳ YOLOv5 모델 로딩 중...", fg="#ef6c00")
+        self.model_pb.start(12)
+        threading.Thread(target=self._load_worker, daemon=True).start()
+
+    def _load_worker(self):
+        try:
+            m, lbl = yolo_mod.load_model()
+            m.eval()
+            yolo_mod.warmup(m)
+            self.model, self.model_label = m, lbl
+            self.root.after(0, self._on_model_loaded, True, lbl)
+        except Exception as e:
+            self.root.after(0, self._on_model_loaded, False, str(e))
+
+    def _on_model_loaded(self, ok, info):
+        self._model_loading = False
+        self.model_pb.stop()
+        if ok:
+            self._model_loaded = True
+            self.model_pb.pack_forget()
+            self.model_status.config(text=f"✓ 모델 준비 완료 — {info}",
+                                     fg="#2e7d32")
+            self.train_next.config(state="normal", bg=ACCENT)
+            self.rec_view.set_preloaded(self.model, self.model_label)
+        else:
+            self.model_status.config(text=f"✗ 모델 로드 실패: {info}", fg="#c62828")
 
     def _on_close(self):
         try:
