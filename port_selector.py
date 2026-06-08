@@ -650,44 +650,53 @@ class PortSelector:
                     text=f"✗ {port} 를 열지 못했습니다.", fg="#c62828"))
                 return
 
-            # 1) 순차 점등 1→18 (무지개로 흐르듯)
-            for k, i in enumerate(ids):
-                if cancel.is_set():
-                    return
-                r, g, b = self._rainbow(k / 18.0)
-                robot.send_leds([(i, r, g, b)])
-                self._ui(lambda i=i: self.led_test_status.config(
-                    text=f"① 순차 점등  ID {i} ({i}/18)", fg="#1565c0"))
-                if cancel.wait(0.12):
-                    return
-
-            # 2) 부위별 플래시 (다리/팔/허리/머리)
-            for gi, (name, grp) in enumerate(groups):
-                if cancel.is_set():
-                    return
-                r, g, b = self._rainbow(gi / len(groups))
-                robot.send_leds([(j, 0, 0, 0) for j in ids])    # 전체 끄고
-                robot.send_leds([(j, r, g, b) for j in grp])    # 해당 부위만 점등
-                self._ui(lambda name=name: self.led_test_status.config(
-                    text=f"② 부위 점등  {name}", fg="#2e7d32"))
-                if cancel.wait(0.4):
-                    return
-
-            # 3) 전체 무지개 회전 (화려하게)
-            for t in range(28):
-                if cancel.is_set():
-                    return
-                leds = [(i,) + self._rainbow((i - 1) / 18.0 + t / 18.0)
-                        for i in ids]
-                robot.send_leds(leds)
-                self._ui(lambda: self.led_test_status.config(
-                    text="③ 무지개 회전 🌈", fg="#6a1b9a"))
-                if cancel.wait(0.07):
-                    return
-
-            robot.send_leds([(i, 0, 0, 0) for i in ids])   # 끄기
+            # 시작: 동작 17 실행 (LED 테스트는 이 동작 중에 — 되면 같이, 안 되면 말고)
+            robot.send_motion(17)
             self._ui(lambda: self.led_test_status.config(
-                text="✓ LED 테스트 완료", fg="#2e7d32"))
+                text="동작 17 실행 + LED 쇼 (멈출 때까지)", fg="#6a1b9a"))
+
+            cycle = 0
+            # 멈춤 버튼 누를 때까지 화려하게 계속 반복
+            while not cancel.is_set():
+                cycle += 1
+                # 1) 순차 점등 1→18 (무지개로 흐르듯)
+                for k, i in enumerate(ids):
+                    if cancel.is_set():
+                        break
+                    r, g, b = self._rainbow(k / 18.0 + cycle * 0.05)
+                    robot.send_leds([(i, r, g, b)])
+                    self._ui(lambda i=i: self.led_test_status.config(
+                        text=f"① 순차 점등  ID {i}", fg="#1565c0"))
+                    if cancel.wait(0.10):
+                        break
+                if cancel.is_set():
+                    break
+
+                # 2) 부위별 플래시 (다리/팔/허리/머리)
+                for gi, (name, grp) in enumerate(groups):
+                    if cancel.is_set():
+                        break
+                    r, g, b = self._rainbow(gi / len(groups) + cycle * 0.1)
+                    robot.send_leds([(j, 0, 0, 0) for j in ids])
+                    robot.send_leds([(j, r, g, b) for j in grp])
+                    self._ui(lambda name=name: self.led_test_status.config(
+                        text=f"② 부위 점등  {name}", fg="#2e7d32"))
+                    if cancel.wait(0.35):
+                        break
+                if cancel.is_set():
+                    break
+
+                # 3) 전체 무지개 회전 (화려하게)
+                for t in range(36):
+                    if cancel.is_set():
+                        break
+                    leds = [(i,) + self._rainbow((i - 1) / 18.0 + t / 18.0)
+                            for i in ids]
+                    robot.send_leds(leds)
+                    self._ui(lambda: self.led_test_status.config(
+                        text="③ 무지개 회전 🌈 (멈춤 버튼으로 종료)", fg="#6a1b9a"))
+                    if cancel.wait(0.06):
+                        break
         except Exception as e:
             if not cancel.is_set():
                 self._ui(lambda ex=e: self.led_test_status.config(
@@ -699,6 +708,10 @@ class PortSelector:
                 except Exception:
                     pass
                 try:
+                    robot.send_motion(1)        # 기본자세(1)로 복귀
+                except Exception:
+                    pass
+                try:
                     robot.close()
                 except Exception:
                     pass
@@ -706,7 +719,7 @@ class PortSelector:
             self._led_test_running = False
             if cancel.is_set():
                 self._ui(lambda: self.led_test_status.config(
-                    text="■ LED 테스트 중지됨", fg="#c62828"))
+                    text="■ LED 테스트 중지됨 (기본자세 복귀)", fg="#c62828"))
             self._ui(lambda: self.led_test_btn.config(text="🌈  LED 테스트")
                      if self.led_test_btn is not None else None)
 
