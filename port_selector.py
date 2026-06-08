@@ -1519,7 +1519,7 @@ if __name__ == "__main__":
         print(f"  - [{idx}] {name}")
 
     print("\n[port_selector] UI를 띄웁니다. (취소하면 종료)")
-    sel = PortSelector(title="장치 선택 데모", baudrate=115200)
+    sel = PortSelector(title="장치 및 로봇 설정", baudrate=115200)
     port = sel.run()
     if port is None:
         print("[port_selector] 선택된 포트 없음.")

@@ -25,6 +25,7 @@ import hangul
 import yolo as yolo_mod
 import sound as snd
 import object_actions
+from motion_table import coco_kr
 from paths import CONFIG_INI
 from robot_controller import HumanoidRobot
 from motion import MotionRunner
@@ -369,19 +370,22 @@ class RecognitionView(ttk.Frame):
             frame = None if self._frame is None else self._frame.copy()
             dets = self._dets
         if frame is not None:
-            top_label, top_conf = "", 0.0
+            top_label, top_conf, top_id = "", 0.0, -1
             hud = []
             for det in dets:
                 x1, y1, x2, y2 = (int(det[0]), int(det[1]),
                                   int(det[2]), int(det[3]))
-                conf = float(det[4]); name = self.model.names[int(det[5])]
+                conf = float(det[4]); cid = int(det[5])
+                name = self.model.names[cid]
+                kr = coco_kr(name)
+                tag = f"{cid + 1}. {name}" + (f"({kr})" if kr else "")
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 200, 0), 2)
-                hud.append(hangul.outlined(f"{name} {conf*100:.0f}%",
+                hud.append(hangul.outlined(f"{tag} {conf*100:.0f}%",
                                            (x1 + 2, max(0, y1 - 22)), 16,
                                            color=(0, 0, 0),
                                            outline=(255, 255, 255)))
                 if conf > top_conf:
-                    top_conf = conf; top_label = name
+                    top_conf = conf; top_label = name; top_id = cid
             frame = hangul.draw_texts(frame, hud)
 
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -394,9 +398,14 @@ class RecognitionView(ttk.Frame):
             self.canvas.itemconfig(self.img_id, image=self._imgtk)
             self.canvas.coords(self.img_id, cw // 2, ch // 2)
 
-            self.lbl_obj.config(
-                text=f"인식: {top_label} ({top_conf*100:.0f}%)"
-                if top_label else "인식: -")
+            if top_label:
+                kr = coco_kr(top_label)
+                name_disp = f"{top_id + 1}. {top_label}" + (
+                    f" ({kr})" if kr else "")
+                self.lbl_obj.config(
+                    text=f"인식: {name_disp}  {top_conf*100:.0f}%")
+            else:
+                self.lbl_obj.config(text="인식: -")
 
         self.lbl_conn.config(
             text=f"연결: {'정상' if self.robot and self.robot.is_connected else '-'}")

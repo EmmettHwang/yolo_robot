@@ -24,8 +24,14 @@ from paths import OBJECT_ACTIONS_JSON, DATA_DIR
 import sound as snd
 import mp3_library
 from motion_table import (
-    ALL_MOTIONS, motion_label, motion_name, COCO_CLASSES,
+    ALL_MOTIONS, motion_label, motion_name, COCO_CLASSES, coco_kr,
 )
+
+
+def obj_label(name: str) -> str:
+    """객체 이름에 한글 번역 병기. (예: 'person' → 'person (사람)')"""
+    kr = coco_kr(name)
+    return f"{name} ({kr})" if kr else name
 
 NONE_MOTION = "(없음)"
 
@@ -79,6 +85,7 @@ class ActionEditor(ttk.Frame):
         self.all_objects = base
         self.motion_labels = [motion_label(n) for n in ALL_MOTIONS]
         self.rows = []          # 각 행: dict
+        self._disp_to_name = {}  # 드롭다운 표시문자열 → 실제 클래스명
         self.mp3_items = mp3_library.list_mp3()   # [(path,label)]
         self._build()
         self._load_existing()
@@ -178,10 +185,12 @@ class ActionEditor(ttk.Frame):
         avail = self._available_objects()
         q = self.search_var.get().strip().lower() \
             if hasattr(self, "search_var") else ""
+        pairs = [(obj_label(o), o) for o in avail]   # (표시, 실제명)
         if q:
-            avail = [o for o in avail if q in o.lower()]
-        self.add_combo["values"] = avail
-        if avail:
+            pairs = [(d, o) for d, o in pairs if q in d.lower()]
+        self._disp_to_name = {d: o for d, o in pairs}
+        self.add_combo["values"] = [d for d, _ in pairs]
+        if pairs:
             self.add_combo.current(0)
         else:
             self.add_var.set("(검색결과 없음)" if q else "(모든 객체 지정됨)")
@@ -205,7 +214,8 @@ class ActionEditor(ttk.Frame):
         self._refresh_motion_combos()
 
     def _add_selected(self):
-        obj = self.add_var.get().strip()
+        disp = self.add_var.get().strip()
+        obj = self._disp_to_name.get(disp, disp)   # 표시문자열 → 실제 클래스명
         if not obj or obj.startswith("("):
             return
         if obj in self._used_objects():
@@ -220,7 +230,7 @@ class ActionEditor(ttk.Frame):
         fr = tk.Frame(self.body); fr.pack(fill="x", pady=2)
         row["frame"] = fr
 
-        tk.Label(fr, text=obj, width=18, anchor="w",
+        tk.Label(fr, text=obj_label(obj), width=22, anchor="w",
                  font=("Malgun Gothic", 9)).pack(side="left")
 
         mv = tk.StringVar()

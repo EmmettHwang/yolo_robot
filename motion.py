@@ -25,6 +25,7 @@ from motor_map import ALL_IDS
 # 인식 반응 LED 연출 기본값
 REACTION_COLOR = (0, 150, 255)      # 페이드 색 (시안)
 ACTION_LED_HOLD = 1.6               # 모션 실행 후 페이드아웃까지 대기(초)
+RETURN_COLOR = (0, 230, 80)         # 동작 정지 → Ready 복귀 색 (초록)
 
 
 class MotionRunner:
@@ -93,12 +94,12 @@ class MotionRunner:
             self.send_once(READY_MOTION)
 
     def stop_all(self) -> None:
-        """진행 중인 시퀀스/반응/대기 단발을 모두 비우고 모션 0(중단)을 전송."""
+        """진행 중인 동작을 멈추고 Ready 자세로 복귀(페이드인 LED 쇼와 함께)."""
         self._cancel_action.set()           # 진행 중인 LED 반응 즉시 종료
         with self._lock:
             self._seq = None
             self._oneshots.clear()
-        self.send_once(0)        # 모션 0 = 중단
+        self._enqueue(("ready_led", None))  # Ready 복귀 + LED 연출
 
     def forward(self) -> None:
         self.start_sequence(FORWARD_SEQUENCE)
@@ -127,6 +128,9 @@ class MotionRunner:
             ok = bool(r.power(payload))
         elif kind == "effect":
             self._run_effect(payload)
+            ok = True
+        elif kind == "ready_led":
+            self._run_ready_led()
             ok = True
         elif kind == "safepwr":
             self._run_safe_power(payload)
@@ -183,6 +187,42 @@ class MotionRunner:
                 return True
             left -= w
         return False
+
+    def _run_ready_led(self) -> None:
+        """동작 정지: Ready(1) 자세로 복귀하면서 LED 페이드인 쇼 → 페이드아웃 → 끄기."""
+        self._busy = True
+        self._cancel_action.clear()
+        ids = ALL_IDS
+        r, g, b = RETURN_COLOR
+        STEP = 8
+        try:
+            if self.robot:
+                self.robot.send_motion(READY_MOTION)     # 1 = 기본자세
+            # 페이드 인 (복귀 연출)
+            for k in range(1, STEP + 1):
+                f = k / STEP
+                if not self._leds([(i, int(r * f), int(g * f), int(b * f))
+                                   for i in ids]):
+                    return
+                if self._wait(0.05):
+                    return
+            if self._wait(0.4):
+                return
+            # 페이드 아웃
+            for k in range(STEP, -1, -1):
+                f = k / STEP
+                if not self._leds([(i, int(r * f), int(g * f), int(b * f))
+                                   for i in ids]):
+                    return
+                if self._wait(0.05):
+                    return
+        finally:
+            try:
+                if self.robot:
+                    self.robot.send_leds([(i, 0, 0, 0) for i in ids])
+            except Exception:
+                pass
+            self._busy = False
 
     def _run_effect(self, payload) -> None:
         """LED 페이드인 → 반짝 → 모션 → (hold 만큼 지속) → 페이드아웃 → 반짝 → 끄기.
