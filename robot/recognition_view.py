@@ -567,9 +567,23 @@ class RecognitionView(ttk.Frame):
         """객체 반응 매핑을 조용히 다시 불러온다(자동 호출용)."""
         self.mapping = object_actions.load_actions()
 
+    def _reset_recognition_state(self):
+        """인식/직전 인식/지속시간 등 추적 상태 초기화."""
+        self._cur_obj = ""
+        self._cur_start = 0.0
+        self._prev_obj = ""
+        self._prev_start = 0.0
+        self._prev_dur = 0.0
+        self._last_acted = ""
+        self._empty = 0
+        with self._lock:
+            self._dets = np.empty((0, 6))
+
     def _reload_mapping(self):
         self.reload_mapping()
-        messagebox.showinfo("새로고침", "객체 반응 매핑을 다시 불러왔습니다.")
+        self._reset_recognition_state()       # 인식 결과/직전 인식 초기화
+        messagebox.showinfo("새로고침",
+                            "매핑을 다시 불러오고 인식 상태를 초기화했습니다.")
 
     def _on_joystick(self, direction):
         if not self.runner:
