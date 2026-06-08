@@ -29,6 +29,7 @@ class Joystick(tk.Frame):
         self.knob_r = max(16, size // 6)
         self.on_change = on_change
         self.cur = None
+        self.enabled = True
 
         self.cv = tk.Canvas(self, width=size, height=size, bg="#222222",
                             highlightthickness=0, cursor="hand2")
@@ -80,7 +81,20 @@ class Joystick(tk.Frame):
         idx = int((ang + 22.5) // 45) % 8
         return DIRS_8[idx], dx, dy, dist
 
+    def set_enabled(self, enabled: bool) -> None:
+        self.enabled = enabled
+        self.cv.config(cursor="hand2" if enabled else "arrow")
+        self.cv.itemconfig(self.knob,
+                           fill="#1565c0" if enabled else "#555555")
+        if not enabled and self.cur is not None:
+            self.cur = None
+            self._reset_knob()
+            if self.on_change:
+                self.on_change(None)
+
     def _on_drag(self, event) -> None:
+        if not self.enabled:
+            return
         d, dx, dy, dist = self._direction(event.x, event.y)
         # 노브를 반경 안으로 클램프해서 따라가게
         cx, cy = self._center()

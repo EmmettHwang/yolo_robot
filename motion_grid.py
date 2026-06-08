@@ -99,6 +99,11 @@ class MotionGrid(tk.Frame):
             tag = " 🔊" if e.get("sound_kind", snd.NONE) != snd.NONE else ""
             b.config(text=f"{n}{tag}\n{short}")
 
+    def set_enabled(self, enabled: bool) -> None:
+        st = "normal" if enabled else "disabled"
+        for b in self.buttons:
+            b.config(state=st)
+
     def _click(self, i: int) -> None:
         if self.on_action:
             self.on_action(self.entries[i])

@@ -118,6 +118,11 @@ class RecognitionView(ttk.Frame):
             ctrl, text="사운드: ON", width=10, cursor="hand2",
             command=self._toggle_sound)
         self.sound_btn.pack(side="left", padx=(8, 0))
+        self.stop_btn = tk.Button(
+            ctrl, text="■ 동작 정지", width=10, cursor="hand2",
+            bg="#ef6c00", fg="white", relief="flat",
+            command=self._stop_motion)
+        self.stop_btn.pack(side="left", padx=(8, 0))
         ttk.Button(ctrl, text="↻ 매핑 새로고침", cursor="hand2",
                    command=self._reload_mapping).pack(side="left", padx=(8, 0))
 
@@ -133,6 +138,9 @@ class RecognitionView(ttk.Frame):
                  font=("Malgun Gothic", 9, "bold")).pack()
         self.joy = Joystick(jwrap, size=180, on_change=self._on_joystick)
         self.joy.pack()
+        self.manual_hint = tk.Label(jwrap, text="", font=("Malgun Gothic", 8),
+                                    fg="#c62828")
+        self.manual_hint.pack()
 
         disp = tk.Frame(body); disp.pack(side="left", fill="both", expand=True)
         self.lbl_conn = tk.Label(disp, text="연결: -", anchor="w",
@@ -151,6 +159,8 @@ class RecognitionView(ttk.Frame):
                  font=("Malgun Gothic", 9, "bold")).pack()
         self.grid = MotionGrid(gwrap, on_action=self._on_grid)
         self.grid.pack()
+
+        self._set_manual_enabled(not self.yolo_on)   # YOLO ON이면 수동 비활성
 
     # ============================================================
     # 시작 / 정지
@@ -207,6 +217,7 @@ class RecognitionView(ttk.Frame):
         self.running = True
         self.start_btn.config(text="■ 정지", bg="#c62828")
         self.canvas.delete("hint")
+        self._set_manual_enabled(not self.yolo_on)
 
         self._stop_flag = threading.Event()
         self._worker = threading.Thread(target=self._loop, daemon=True)
@@ -362,6 +373,22 @@ class RecognitionView(ttk.Frame):
     def _toggle_yolo(self):
         self.yolo_on = not self.yolo_on
         self.yolo_btn.config(text=f"YOLO: {'ON' if self.yolo_on else 'OFF'}")
+        # YOLO 동작 중에는 수동 조작(조이스틱/그리드) 비활성
+        self._set_manual_enabled(not self.yolo_on)
+
+    def _set_manual_enabled(self, enabled):
+        try:
+            self.grid.set_enabled(enabled)
+            self.joy.set_enabled(enabled)
+        except Exception:
+            pass
+        if self.manual_hint is not None:
+            self.manual_hint.config(
+                text="" if enabled else "YOLO ON 중 — 수동 조작 잠금")
+
+    def _stop_motion(self):
+        if self.runner:
+            self.runner.stop_all()
 
     def _toggle_sound(self):
         self.sound_on = not self.sound_on

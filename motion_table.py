@@ -29,14 +29,17 @@ MOTION_NAMES = {
     37: "Fight Getup F", 38: "Fight Getup B",
     55: "Grip(잡기)", 56: "Laydown(눕기)",
     60: "Safe Sit", 61: "Safe Up",
-    63: "Dance KPop", 65: "Dance Boy", 67: "Dance Girl",
+    63: "오늘부터우리는-여자친구", 65: "블락비", 67: "트와이스-걸그룹",
     68: "Swing Head", 69: "Look Left", 70: "Look Right",
     71: "Push L Hand", 72: "Push R Hand", 73: "Twist", 74: "Foot Up",
 }
 
-# 연속(반복) 동작 시퀀스
-FORWARD_SEQUENCE = [2, 3, 4]        # 전진
-BACKWARD_SEQUENCE = [9, 10, 11]     # 후진
+# 연속(반복) 동작 시퀀스 — 실행 순서는 ST → Loop → End
+#   전진 F: 2=ST, 3=Loop, 4=End  → [2, 3, 4]
+#   후진 B: 9=ST, 11=Loop, 10=End → [9, 11, 10]
+#     (후진은 번호순서가 ST,End,Loop라 [9,10,11]로 보내면 중간 End가 끼어 끊긴다)
+FORWARD_SEQUENCE = [2, 3, 4]        # 전진 (ST→Loop→End)
+BACKWARD_SEQUENCE = [9, 11, 10]     # 후진 (ST→Loop→End)
 SEQUENCE_DELAY_MS = 200             # 동작 사이 딜레이
 
 # 기본 자세
