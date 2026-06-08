@@ -110,6 +110,31 @@ def list_camera_devices(max_probe: int = 6) -> List[Tuple[int, str]]:
     return devices
 
 
+try:
+    import winreg
+    _HAS_WINREG = True
+except Exception:
+    _HAS_WINREG = False
+
+
+def bt_device_name(mac12: str) -> Optional[str]:
+    """페어링된 블루투스 기기의 친숙한 이름(예: 'FB153 v1.0.0')을 레지스트리에서 조회."""
+    if not (_HAS_WINREG and mac12):
+        return None
+    try:
+        path = (r"SYSTEM\CurrentControlSet\Services\BTHPORT"
+                r"\Parameters\Devices\%s" % mac12.lower())
+        k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path)
+        val, _ = winreg.QueryValueEx(k, "Name")
+        winreg.CloseKey(k)
+        if isinstance(val, (bytes, bytearray)):
+            return (val.split(b"\x00")[0].decode("utf-8", "ignore").strip()
+                    or None)
+        return str(val).strip() or None
+    except Exception:
+        return None
+
+
 def _bt_remote_address(hwid: str) -> Optional[str]:
     """Bluetooth 시리얼 포트 hwid에서 상대 기기 주소(12 hex)를 추출.
 
@@ -360,6 +385,13 @@ class PortSelector:
         self.root.minsize(self.width, self.height)
         self._center_window(self.root)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        # 창을 최상단으로 + 포커스(다른 윈도 아래로 안 들어가게)
+        try:
+            self.root.lift()
+            self.root.attributes("-topmost", True)
+            self.root.after(60, self.root.focus_force)
+        except Exception:
+            pass
         try:
             style = ttk.Style()
             if "vista" in style.theme_names():
@@ -878,9 +910,12 @@ class PortSelector:
             label = f"{p.device} - {p.description}"
             addr = _bt_remote_address(p.hwid)
             if addr and addr != "000000000000":
-                # 실제 페어링 기기로 향하는 발신 포트 = 로봇 가능성 높음
-                short = f"{addr[-4:-2]}:{addr[-2:]}"   # MAC 끝 4자리만 xx:xx
-                label += f"   ★ 페어링됨({short}) · 로봇 추정"
+                # 페어링된 발신 포트 → 실제 기기명 표시(예: FB153 v1.0.0)
+                name = bt_device_name(addr)
+                if name:
+                    label += f"   ★ {name}"
+                else:
+                    label += f"   ★ 페어링됨({addr[-4:-2]}:{addr[-2:]})"
                 if robot_idx is None:
                     robot_idx = len(display)
             display.append(label)

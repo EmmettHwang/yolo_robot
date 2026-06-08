@@ -290,6 +290,8 @@ class MotionRunner:
             self._wait(0.12)
             if self.effects_on:
                 sound.player.play_effect(sound.FX_END)
+            if self.robot:
+                self.robot.send_motion(READY_MOTION)   # 동작 종료 → 기본자세 복귀
         finally:
             # 끝/중지 시 LED 끄기
             try:
