@@ -72,6 +72,14 @@ def show_gallery(cls):
     return list_images(cls)[-40:]
 
 
+def init_view():
+    """앱 로드 시 클래스 드롭다운/갤러리/카운트를 채운다(첫 클래스 미리 보기)."""
+    classes = load_classes()
+    first = classes[0] if classes else None
+    return (gr.update(choices=classes, value=first),
+            show_gallery(first), _counts_md())
+
+
 def delete_selected_class(cls):
     if cls and cls in load_classes():
         delete_class(cls)
@@ -107,23 +115,32 @@ def train(epochs, imgsz):
         "project=r'%s', name='custom', exist_ok=True, device='cpu', workers=0)"
         % (base, DATA_YAML, int(epochs), int(imgsz), RUNS_DIR)
     )
-    log = f"학습 시작: {len(classes)}클래스 / {total}장, {epochs}에폭\n\n"
-    yield log, None, ""
-    proc = subprocess.Popen([PY, "-c", code], cwd=os.path.dirname(ROOT),
+    TAIL = 200                       # 최근 N줄만 표시(아래쪽 최신 유지)
+    lines = [f"학습 시작: {len(classes)}클래스 / {total}장, {epochs}에폭", ""]
+
+    def _tail():
+        return "\n".join(lines[-TAIL:])
+
+    yield _tail(), None, ""
+    proc = subprocess.Popen([PY, "-c", code], cwd=ROOT,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, encoding="utf-8", errors="replace",
                             bufsize=1)
-    for line in proc.stdout:
-        log += line
-        yield log, None, ""
+    for raw in proc.stdout:
+        # ultralytics 진행바의 \r 처리: 마지막 조각만 한 줄로
+        line = raw.replace("\r", "\n").rstrip("\n").split("\n")[-1]
+        if line:
+            lines.append(line)
+            yield _tail(), None, ""
     proc.wait()
     if proc.returncode != 0:
-        yield log + f"\n✗ 학습 실패(코드 {proc.returncode})", None, ""
+        lines.append(f"✗ 학습 실패(코드 {proc.returncode})")
+        yield _tail(), None, ""
         return
     m = read_results_metrics()
     graph = RESULTS_PNG if os.path.exists(RESULTS_PNG) else None
-    md = _metrics_md(m)
-    yield log + f"\n✓ 학습 완료. 결과: {BEST_WEIGHTS}\n", graph, md
+    lines.append(f"✓ 학습 완료. 결과: {BEST_WEIGHTS}")
+    yield _tail(), graph, _metrics_md(m)
 
 
 def _pct(v):
@@ -157,13 +174,25 @@ def export_apply(name):
     os.makedirs(MODELS_DIR, exist_ok=True)
     dst = os.path.join(MODELS_DIR, name)
     try:
-        shutil.copy(BEST_WEIGHTS, dst)
+        shutil.copy(BEST_WEIGHTS, dst)              # 학습 가중치 보관(best.pt 사본)
         names = export_onnx.apply_pt_as_active(dst, label=name)   # → active.onnx
     except Exception as e:
         return f"✗ 변환 실패: {e}", None
-    files = [p for p in (ACTIVE_ONNX, ACTIVE_CLASSES) if os.path.exists(p)]
-    return (f"✓ active.onnx 적용 완료 — {name}, 클래스 {len(names)}개\n"
-            f"(런타임 앱에서 '연결 & 시작' 하면 바로 사용)"), files
+    # 다운로드: ONNX(추론용) + classes(클래스명) + .pt(원본 가중치/재학습용)
+    files = [p for p in (ACTIVE_ONNX, ACTIVE_CLASSES, dst)
+             if os.path.exists(p)]
+    msg = (
+        f"✓ 변환 완료 — **{name}**, 클래스 {len(names)}개\n\n"
+        "**아래 3개 파일을 다운로드**하세요:\n"
+        "- `active.onnx` — 인식(추론)용 모델\n"
+        "- `active.names` — 클래스 이름 목록\n"
+        f"- `{name}` — 학습 가중치(best.pt 사본, 재학습/재변환용)\n\n"
+        "**📂 저장 위치**: 다운로드한 `active.onnx` + `active.names` 를 "
+        "**런타임 PC의 `gradio/model/` 폴더**에 넣으세요. "
+        "(`.pt` 는 보관용 — `model/` 에 같이 둬도 됩니다)\n"
+        "그 뒤 인식 앱에서 **■ 정지 → ▶ 연결 & 시작** 하면 새 모델이 적용됩니다."
+    )
+    return msg, files
 
 
 # ============================================================
@@ -229,9 +258,12 @@ def build():
             name_in = gr.Textbox(value="custom", label="모델 이름")
             exp_btn = gr.Button("🚀 ONNX 변환 & 적용", variant="primary")
             exp_status = gr.Markdown("")
-            exp_files = gr.File(label="다운로드 (active.onnx / classes)",
+            exp_files = gr.File(label="⬇ 다운로드 (active.onnx · active.names · best.pt)",
                                 file_count="multiple")
             exp_btn.click(export_apply, name_in, [exp_status, exp_files])
+
+        # 앱 로드 시 클래스 보기/카운트 초기화
+        demo.load(init_view, None, [cls_dd, gallery, counts])
 
     return demo
 

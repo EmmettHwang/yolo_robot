@@ -2,7 +2,7 @@
 
 # 🤖 YOLO 기반 휴머노이드 ROBO COMMANDER
 
-**버전: `4.2.20260609.1559`**
+**버전: `4.3.20260609.1831`**
 
 </div>
 
@@ -48,6 +48,7 @@
 ### 변경 이력
 | 버전 | 내용 |
 |------|------|
+| `4.3.20260609.1831` | 학습 웹앱 개선: 초기 클래스 갤러리 로드, 학습 로그 최신(아래) 유지+진행바 \r 정리, 다운로드에 best.pt 포함+저장 위치 안내. 런타임 인공지능학습 탭에 '학습 웹앱 주소' 설정+웹뷰로 열기(서버 연결) |
 | `4.2.20260609.1559` | 로컬 Gradio 학습 웹앱(train_app.py) 추가 — 웹캠 수집·ultralytics 학습·결과(mAP/그래프)·ONNX 내보내기(active.onnx). git worktree로 main/ultra/gradio 폴더 분리 |
 | `4.1.20260609.1542` | 런타임 추론을 OpenCV DNN(ONNX)로 교체 — yolo.py 재작성(v5/v8/v11 출력 자동판별·letterbox·NMS, 한글경로 버퍼우회), export_onnx.py(.pt→.onnx+classes), 모델 교체 시 active.onnx 생성. bus.jpg 검증 통과(버스+사람4) |
 | `4.0.20260609.1531` | **메이저 업 + `gradio` 브랜치 시작** — 배포용 경량 구조 설계: 런타임 추론을 OpenCV DNN(ONNX)로, 학습은 로컬 Gradio 웹앱으로 완전 분리(계약: active.onnx+classes.txt). README에 브랜치 안내 추가 |

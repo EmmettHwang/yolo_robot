@@ -135,8 +135,51 @@ class App:
         except Exception:
             return 0
 
+    # ---------- 학습 웹앱(서버) 연결 ----------
+    def _get_train_url(self):
+        try:
+            with open(os.path.join(DATA_DIR, "train_url.txt"),
+                      encoding="utf-8") as f:
+                return f.read().strip() or "http://127.0.0.1:7860"
+        except Exception:
+            return "http://127.0.0.1:7860"
+
+    def _save_train_url(self):
+        url = (self.train_url_var.get() or "").strip()
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            with open(os.path.join(DATA_DIR, "train_url.txt"), "w",
+                      encoding="utf-8") as f:
+                f.write(url)
+            self.model_status.config(text=f"학습 웹앱 주소 저장: {url}",
+                                     fg="#2e7d32")
+        except Exception:
+            pass
+
+    def _open_train_web(self):
+        """학습 웹앱(서버) 페이지를 웹뷰로 열고, 닫히면 모델 변경 감지→재로드."""
+        if self._train_proc is not None and self._train_proc.poll() is None:
+            return
+        url = (self.train_url_var.get() or "").strip() or self._get_train_url()
+        try:
+            self.rec_view.stop()       # 인식이 잡은 카메라/포트 반환
+        except Exception:
+            pass
+        self._train_before_mtime = self._get_active_mtime()
+        self._train_proc = subprocess.Popen(
+            [PY, os.path.join(ROBOT_DIR, "webview_window.py"),
+             url, "학습 웹앱"], cwd=BASE, env=self._child_env())
+        self._show_wait_dialog(
+            title="학습 웹앱",
+            heading="🌐  학습 웹앱(서버)",
+            msg=("학습 웹앱에서 데이터 수집·학습·내보내기를 진행하세요.\n"
+                 "끝나면 active.onnx·active.names 를 model/ 폴더에 넣고\n"
+                 "이 창을 닫으면 자동으로 모델을 확인합니다."),
+            waiting="⏳ 학습 웹앱 창을 기다리는 중... (이 창은 잠금 상태)")
+        self._watch_train_proc()
+
     def _open_training(self):
-        """로봇 학습 창(트레이너)을 별도 프로세스로 열고, 닫히면(뒤로) 모델 변경 시 재로드."""
+        """(구) 로컬 학습 스튜디오 — 별도 프로세스로 열고, 닫히면 모델 변경 시 재로드."""
         if self._train_proc is not None and self._train_proc.poll() is None:
             return
         # 학습 스튜디오가 카메라를 쓰므로 인식이 잡은 포트/카메라를 먼저 반환
@@ -303,11 +346,21 @@ class App:
         self.coco_list.pack(side="left")
         self._set_class_list(list(COCO_CLASSES))
 
+        # 학습 서버(웹앱) 주소
+        urow = tk.Frame(f, bg=BG); urow.pack(pady=(4, 0))
+        tk.Label(urow, text="학습 웹앱 주소:", font=("Malgun Gothic", 9),
+                 bg=BG, fg="#555").pack(side="left")
+        self.train_url_var = tk.StringVar(value=self._get_train_url())
+        tk.Entry(urow, textvariable=self.train_url_var, width=30).pack(
+            side="left", padx=(4, 4))
+        tk.Button(urow, text="저장", cursor="hand2",
+                  command=self._save_train_url).pack(side="left")
+
         btns = tk.Frame(f, bg=BG); btns.pack(pady=18)
-        tk.Button(btns, text="🧠 학습하기 (수집/학습/교체)",
+        tk.Button(btns, text="🌐 학습 웹앱 열기",
                   font=("Malgun Gothic", 11, "bold"), bg="#6a1b9a", fg="white",
                   relief="flat", cursor="hand2", height=2, width=24,
-                  command=self._open_training).pack(side="left", padx=6)
+                  command=self._open_train_web).pack(side="left", padx=6)
         self.train_next = tk.Button(
             btns, text="다음 → 자율활동시작 ▶", font=("Malgun Gothic", 11, "bold"),
             bg="#9e9e9e", fg="white", relief="flat", height=2, width=18,
