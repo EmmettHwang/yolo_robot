@@ -102,7 +102,7 @@ def _counts_md():
 # ============================================================
 # ② 학습
 # ============================================================
-def train(epochs, imgsz):
+def train(epochs, imgsz, patience):
     classes = load_classes()
     total = sum(count_images(c) for c in classes)
     if total < 1 or not classes:
@@ -111,7 +111,10 @@ def train(epochs, imgsz):
     base = BASE_WEIGHTS if os.path.exists(BASE_WEIGHTS) else "yolov5su.pt"
     build_data_yaml()
     # patience: 성능 개선이 N에폭 동안 없으면 조기 종료(best는 항상 저장됨)
-    patience = 10
+    try:
+        patience = max(1, int(patience))
+    except Exception:
+        patience = 10
     code = (
         "from ultralytics import YOLO; "
         "m = YOLO(r'%s'); "
@@ -259,6 +262,8 @@ def build():
             with gr.Row():
                 epochs_in = gr.Number(value=30, label="반복 횟수(에폭)",
                                       precision=0)
+                patience_in = gr.Number(value=10, precision=0,
+                                        label="조기종료(개선 없는 에폭 수)")
                 imgsz_in = gr.Dropdown([str(s) for s in SIZES], value="320",
                                        label="사진 크기")
                 train_btn = gr.Button("▶ 학습 시작", variant="primary")
@@ -291,7 +296,7 @@ def build():
             _gate2, None, tab2)
         del_btn.click(delete_selected_class, cls_dd,
                       [cls_dd, gallery, counts]).then(_gate2, None, tab2)
-        train_btn.click(train, [epochs_in, imgsz_in],
+        train_btn.click(train, [epochs_in, imgsz_in, patience_in],
                         [train_log, result_graph, result_md]).then(
             _gate3, None, tab3)
         exp_btn.click(export_apply, name_in, [exp_status, exp_files])
