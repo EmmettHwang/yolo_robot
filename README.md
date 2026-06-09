@@ -2,7 +2,7 @@
 
 # 🤖 YOLO 기반 휴머노이드 ROBO COMMANDER
 
-**버전: `4.3.20260609.1831`**
+**버전: `4.4.20260609.1838`**
 
 </div>
 
@@ -48,6 +48,7 @@
 ### 변경 이력
 | 버전 | 내용 |
 |------|------|
+| `4.4.20260609.1838` | .env 설정 도입(paths.load_env): 학습 웹앱 서버 TRAIN_HOST=0.0.0.0/PORT, 런타임 접속 TRAIN_URL 기본값. train_app은 .env 호스트/포트로 launch |
 | `4.3.20260609.1831` | 학습 웹앱 개선: 초기 클래스 갤러리 로드, 학습 로그 최신(아래) 유지+진행바 \r 정리, 다운로드에 best.pt 포함+저장 위치 안내. 런타임 인공지능학습 탭에 '학습 웹앱 주소' 설정+웹뷰로 열기(서버 연결) |
 | `4.2.20260609.1559` | 로컬 Gradio 학습 웹앱(train_app.py) 추가 — 웹캠 수집·ultralytics 학습·결과(mAP/그래프)·ONNX 내보내기(active.onnx). git worktree로 main/ultra/gradio 폴더 분리 |
 | `4.1.20260609.1542` | 런타임 추론을 OpenCV DNN(ONNX)로 교체 — yolo.py 재작성(v5/v8/v11 출력 자동판별·letterbox·NMS, 한글경로 버퍼우회), export_onnx.py(.pt→.onnx+classes), 모델 교체 시 active.onnx 생성. bus.jpg 검증 통과(버스+사람4) |

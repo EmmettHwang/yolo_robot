@@ -14,6 +14,26 @@ import os
 ROBOT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.dirname(ROBOT_DIR)
 
+ENV_FILE = os.path.join(BASE, ".env")
+
+
+def load_env() -> None:
+    """프로젝트 루트의 .env 를 os.environ 에 로드(이미 설정된 값은 보존)."""
+    try:
+        with open(ENV_FILE, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k, v = k.strip(), v.strip().strip('"').strip("'")
+                os.environ.setdefault(k, v)
+    except Exception:
+        pass
+
+
+load_env()      # 모듈 import 시 자동 로드
+
 # 설정 / 데이터
 CONFIG_INI = os.path.join(BASE, "config.ini")
 DATA_DIR = os.path.join(BASE, "data")

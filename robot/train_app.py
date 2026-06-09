@@ -269,4 +269,9 @@ def build():
 
 
 if __name__ == "__main__":
-    build().launch(server_name="127.0.0.1", server_port=7860, inbrowser=True)
+    host = os.getenv("TRAIN_HOST", "127.0.0.1")
+    port = int(os.getenv("TRAIN_PORT", "7860"))
+    local = host in ("127.0.0.1", "localhost")
+    print(f"[train_app] 서버 시작: http://{host}:{port}  "
+          f"(외부 접속은 http://<이 PC IP>:{port})")
+    build().launch(server_name=host, server_port=port, inbrowser=local)

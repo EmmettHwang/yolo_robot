@@ -137,12 +137,13 @@ class App:
 
     # ---------- 학습 웹앱(서버) 연결 ----------
     def _get_train_url(self):
+        default = os.getenv("TRAIN_URL", "http://127.0.0.1:7860")
         try:
             with open(os.path.join(DATA_DIR, "train_url.txt"),
                       encoding="utf-8") as f:
-                return f.read().strip() or "http://127.0.0.1:7860"
+                return f.read().strip() or default
         except Exception:
-            return "http://127.0.0.1:7860"
+            return default
 
     def _save_train_url(self):
         url = (self.train_url_var.get() or "").strip()
