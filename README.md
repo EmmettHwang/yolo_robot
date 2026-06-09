@@ -1,7 +1,8 @@
 
 <div align="center">
 # 🤖 YOLO 기반 휴머노이드 ROBO COMMANDER
-</div>
+</div>    
+
 ## 개요 
 ### 1. 이 프로그램은 YOLO 모델을 이용해서 사물인식을 하고 인식된 결과에 따라 로봇이 자율 활동을 하도록 한다.
 ### 2. 프로그램은 다음과 같은 Sequence로 진행 된다.
