@@ -110,15 +110,18 @@ def train(epochs, imgsz):
         return
     base = BASE_WEIGHTS if os.path.exists(BASE_WEIGHTS) else "yolov5su.pt"
     build_data_yaml()
+    # patience: 성능 개선이 N에폭 동안 없으면 조기 종료(best는 항상 저장됨)
+    patience = 10
     code = (
         "from ultralytics import YOLO; "
         "m = YOLO(r'%s'); "
-        "m.train(data=r'%s', epochs=%d, imgsz=%d, batch=4, "
+        "m.train(data=r'%s', epochs=%d, imgsz=%d, batch=4, patience=%d, "
         "project=r'%s', name='custom', exist_ok=True, device='cpu', workers=0)"
-        % (base, DATA_YAML, int(epochs), int(imgsz), RUNS_DIR)
+        % (base, DATA_YAML, int(epochs), int(imgsz), patience, RUNS_DIR)
     )
-    TAIL = 200                       # 최근 N줄만 표시(아래쪽 최신 유지)
-    lines = [f"학습 시작: {len(classes)}클래스 / {total}장, {epochs}에폭", ""]
+    TAIL = 400                       # 이력 보존(스크롤). 바닥 고정은 JS가 처리
+    lines = [f"학습 시작: {len(classes)}클래스 / {total}장, 최대 {epochs}에폭 "
+             f"(개선 없으면 {patience}에폭 후 자동 종료)", ""]
 
     def _tail():
         return "\n".join(lines[-TAIL:])
@@ -133,7 +136,7 @@ def train(epochs, imgsz):
         line = raw.replace("\r", "\n").rstrip("\n").split("\n")[-1]
         if line:
             lines.append(line)
-            yield _tail(), None, ""
+            yield _tail(), None, _live_md(read_results_metrics())  # 실시간 지표
     proc.wait()
     if proc.returncode != 0:
         lines.append(f"✗ 학습 실패(코드 {proc.returncode})")
@@ -148,6 +151,18 @@ def train(epochs, imgsz):
 
 def _pct(v):
     return f"{v*100:.1f}%" if isinstance(v, float) else "—"
+
+
+def _live_md(m):
+    """학습 중 실시간 지표(에폭마다 갱신). PR 곡선 그림은 완료 시에만."""
+    if not m or m.get("mAP50") is None:
+        return "⏳ 학습 준비/진행 중... (첫 에폭이 끝나면 지표가 표시됩니다)"
+    return (f"### ⏳ 진행 중 — {m.get('epochs','?')}에폭째 (실시간)\n"
+            f"| mAP@50 | mAP@50-95 | 정밀도 | 재현율 |\n"
+            f"|---|---|---|---|\n"
+            f"| **{_pct(m.get('mAP50'))}** | {_pct(m.get('mAP5095'))} | "
+            f"{_pct(m.get('precision'))} | {_pct(m.get('recall'))} |\n"
+            f"_정밀도-재현율(PR) 곡선 그림은 학습이 끝나면 아래에 표시됩니다._")
 
 
 def _metrics_md(m):
@@ -248,8 +263,8 @@ def build():
                                        label="사진 크기")
                 train_btn = gr.Button("▶ 학습 시작", variant="primary")
             gr.Markdown("※ 시간이 좀 걸립니다. 처음엔 반복 10~30 정도로 해보세요.")
-            train_log = gr.Textbox(label="진행 상황", lines=16, max_lines=16,
-                                   autoscroll=True)
+            train_log = gr.Textbox(label="진행 상황", lines=18, max_lines=18,
+                                   autoscroll=True, elem_id="trainlog")
             result_md = gr.Markdown("")
             result_graph = gr.Image(label="정밀도-재현율(PR) 곡선", height=460)
 
@@ -284,6 +299,16 @@ def build():
         # 앱 로드 시 초기화(클래스 보기/카운트 + 탭 잠금 상태)
         demo.load(init_view, None, [cls_dd, gallery, counts])
         demo.load(lambda: (_gate2(), _gate3()), None, [tab2, tab3])
+        # 진행 로그를 항상 맨 아래로 고정(최신이 끝줄에 보이도록)
+        demo.load(None, None, None, js="""
+        () => {
+          if (window.__logPin) return;
+          window.__logPin = setInterval(() => {
+            const ta = document.querySelector('#trainlog textarea');
+            if (ta) ta.scrollTop = ta.scrollHeight;
+          }, 250);
+        }
+        """)
 
     return demo
 
