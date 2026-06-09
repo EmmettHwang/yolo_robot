@@ -354,8 +354,10 @@ class App:
         self.train_url_var = tk.StringVar(value=self._get_train_url())
         tk.Entry(urow, textvariable=self.train_url_var, width=30).pack(
             side="left", padx=(4, 4))
-        tk.Button(urow, text="저장", cursor="hand2",
-                  command=self._save_train_url).pack(side="left")
+        tk.Button(urow, text="주소 저장", bg="#6a1b9a", fg="white",
+                  relief="flat", cursor="hand2",
+                  font=("Malgun Gothic", 9, "bold"),
+                  command=self._save_train_url).pack(side="left", ipadx=4)
 
         btns = tk.Frame(f, bg=BG); btns.pack(pady=18)
         tk.Button(btns, text="🌐 학습 웹앱 열기",
