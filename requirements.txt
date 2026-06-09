@@ -9,13 +9,16 @@
 # Python 3.11 권장
 # ================================================================
 
-# --- 객체 탐지/학습 (ultralytics: YOLOv5/v8/v11 통합) ---
-ultralytics>=8.4.0
-torch>=2.0.0
-torchvision>=0.15.0
+# --- 런타임 추론 (gradio 브랜치: OpenCV DNN + ONNX, torch 불필요) ---
 opencv-python>=4.8.0
 numpy>=1.23.0
 pillow>=9.0.0
+
+# --- 변환/학습 전용 (.pt → .onnx export, 학습 웹앱에서만 사용. 배포 exe엔 불필요) ---
+ultralytics>=8.4.0      # export_onnx.py / 학습
+torch>=2.0.0            #   "
+torchvision>=0.15.0     #   "
+onnx>=1.12.0            # ONNX export
 
 # --- 로봇 시리얼 제어용 ---
 pyserial>=3.5

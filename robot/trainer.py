@@ -820,8 +820,9 @@ class TrainTab(ttk.Frame):
         dst = os.path.join(MODELS_DIR, name)
         try:
             shutil.copy(BEST_WEIGHTS, dst)
-            shutil.copy(dst, ACTIVE_MODEL)   # 저장과 동시에 인식에 바로 적용
-            set_active_name(name)            # 원본 이름 기록
+            # 저장과 동시에 인식에 바로 적용 → ONNX 로 변환해 active.onnx 생성
+            import export_onnx
+            export_onnx.apply_pt_as_active(dst, label=name)
         except Exception as e:
             messagebox.showerror("오류", f"저장 실패: {e}")
             return
@@ -960,8 +961,8 @@ class SwapTab(ttk.Frame):
                             shutil.move(c, dst)
                         break
             if os.path.exists(dst):
-                shutil.copy(dst, ACTIVE_MODEL)
-                set_active_name(fn)        # 원본 이름 기록
+                import export_onnx
+                export_onnx.apply_pt_as_active(dst, label=fn)   # → active.onnx
                 self._ui(lambda: self.status.config(
                     text=f"✓ 적용됨: {fn} (인식에서 사용)", fg="#2e7d32"))
                 self._ui(self._set_active_label)
@@ -982,8 +983,9 @@ class SwapTab(ttk.Frame):
         if not path:
             return
         try:
-            shutil.copy(path, ACTIVE_MODEL)
-            set_active_name(os.path.basename(path))    # 원본 이름 기록
+            import export_onnx
+            export_onnx.apply_pt_as_active(             # → active.onnx
+                path, label=os.path.basename(path))
             self.status.config(text=f"✓ 적용됨: {os.path.basename(path)}",
                                fg="#2e7d32")
             self._set_active_label()

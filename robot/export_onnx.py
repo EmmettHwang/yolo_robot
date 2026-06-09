@@ -1,0 +1,69 @@
+# coding: utf-8
+"""
+export_onnx.py
+==============
+.pt(ultralytics) → .onnx 변환 + 클래스명 사이드카 기록.
+
+런타임 추론(OpenCV DNN)은 ultralytics/torch 가 필요 없지만, .pt 를 ONNX 로
+바꾸는 이 단계만 ultralytics 를 쓴다(변환 1회용 / 학습 웹앱에서도 사용).
+
+추론과 입력 크기를 맞추기 위해 항상 imgsz=EXPORT_IMGSZ(320) 정적 export.
+"""
+
+import os
+import shutil
+
+from paths import (MODELS_DIR, ACTIVE_ONNX, BASE_ONNX,
+                   set_active_classes, set_active_name)
+
+EXPORT_IMGSZ = 320      # 런타임 추론(INFER_SIZE)과 동일해야 함
+
+
+def _names_list(model) -> list:
+    n = model.names
+    if isinstance(n, dict):
+        return [n[k] for k in sorted(n)]
+    return list(n)
+
+
+def export_pt_to_onnx(pt_path: str, imgsz: int = EXPORT_IMGSZ):
+    """주어진 .pt 를 같은 폴더에 .onnx 로 export. (onnx_path, names) 반환."""
+    from ultralytics import YOLO
+    model = YOLO(pt_path)
+    onnx_path = model.export(format="onnx", imgsz=imgsz, opset=12)
+    return str(onnx_path), _names_list(model)
+
+
+def apply_pt_as_active(pt_path: str, label: str = None,
+                       imgsz: int = EXPORT_IMGSZ) -> list:
+    """.pt 를 ONNX 로 변환해 active.onnx + active.names 로 적용. names 반환."""
+    onnx_path, names = export_pt_to_onnx(pt_path, imgsz)
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    shutil.copy(onnx_path, ACTIVE_ONNX)
+    set_active_classes(names)
+    set_active_name(label or os.path.basename(pt_path))
+    return names
+
+
+def ensure_default_onnx() -> None:
+    """active.onnx 가 없으면 기본 모델(yolov5su)을 받아 ONNX 로 만들어 적용."""
+    if os.path.exists(ACTIVE_ONNX):
+        return
+    from ultralytics import YOLO
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    model = YOLO("yolov5su.pt")
+    onnx_path = str(model.export(format="onnx", imgsz=EXPORT_IMGSZ, opset=12))
+    shutil.copy(onnx_path, BASE_ONNX)
+    shutil.copy(onnx_path, ACTIVE_ONNX)
+    set_active_classes(_names_list(model))
+    set_active_name("yolov5su.onnx")
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1:
+        names = apply_pt_as_active(sys.argv[1])
+        print(f"[export] active.onnx 적용 완료, 클래스 {len(names)}개")
+    else:
+        ensure_default_onnx()
+        print("[export] 기본 ONNX 준비 완료")

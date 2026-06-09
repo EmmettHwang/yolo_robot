@@ -26,7 +26,7 @@ from tkinter import ttk
 import serial.tools.list_ports as list_ports
 from PIL import Image, ImageTk
 
-from paths import (BASE, ROBOT_DIR, CONFIG_INI, LOGO_PATH, ACTIVE_MODEL,
+from paths import (BASE, ROBOT_DIR, CONFIG_INI, LOGO_PATH, ACTIVE_ONNX,
                    DATA_DIR, ensure_dirs)
 from version import __version__
 from motion_table import COCO_CLASSES, coco_kr
@@ -130,8 +130,8 @@ class App:
 
     def _get_active_mtime(self):
         try:
-            return os.path.getmtime(ACTIVE_MODEL) \
-                if os.path.exists(ACTIVE_MODEL) else 0
+            return os.path.getmtime(ACTIVE_ONNX) \
+                if os.path.exists(ACTIVE_ONNX) else 0
         except Exception:
             return 0
 

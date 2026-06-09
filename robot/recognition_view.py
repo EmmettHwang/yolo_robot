@@ -28,7 +28,7 @@ import yolo as yolo_mod
 import sound as snd
 import object_actions
 from motion_table import coco_kr
-from paths import CONFIG_INI, DATA_DIR, ACTIVE_MODEL
+from paths import CONFIG_INI, DATA_DIR, ACTIVE_ONNX
 from robot_controller import HumanoidRobot
 from motion import MotionRunner
 from motion_table import FORWARD_SEQUENCE, BACKWARD_SEQUENCE
@@ -67,9 +67,9 @@ def _save_rec_settings(conf, max_det):
 
 
 def _active_mtime():
-    """active.pt 수정 시각(없으면 0). 모델 교체 감지용."""
+    """active.onnx 수정 시각(없으면 0). 모델 교체 감지용."""
     try:
-        return os.path.getmtime(ACTIVE_MODEL) if os.path.exists(ACTIVE_MODEL) \
+        return os.path.getmtime(ACTIVE_ONNX) if os.path.exists(ACTIVE_ONNX) \
             else 0.0
     except Exception:
         return 0.0
