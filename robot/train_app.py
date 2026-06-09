@@ -30,6 +30,8 @@ from trainer import (load_classes, save_classes, list_images, count_images,
 import export_onnx
 
 PY = sys.executable
+# 학습 후 결과 그래프: PR(정밀도-재현율) 커브만 크게 사용
+PR_CURVE = os.path.join(os.path.dirname(RESULTS_PNG), "PR_curve.png")
 
 
 # ============================================================
@@ -138,8 +140,9 @@ def train(epochs, imgsz):
         yield _tail(), None, ""
         return
     m = read_results_metrics()
-    graph = RESULTS_PNG if os.path.exists(RESULTS_PNG) else None
-    lines.append(f"✓ 학습 완료. 결과: {BEST_WEIGHTS}")
+    graph = (PR_CURVE if os.path.exists(PR_CURVE)
+             else (RESULTS_PNG if os.path.exists(RESULTS_PNG) else None))
+    lines.append("✓ 학습 완료! ③ 내보내기 탭에서 모델을 받으세요.")
     yield _tail(), graph, _metrics_md(m)
 
 
@@ -201,69 +204,86 @@ def export_apply(name):
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def build():
-    with gr.Blocks(title="ROBO COMMANDER — 학습 웹앱") as demo:
-        gr.Markdown("# 🧠 ROBO COMMANDER 학습 웹앱\n"
-                    "데이터 수집 → 학습 → ONNX 내보내기. "
-                    "결과(`active.onnx`)는 런타임 인식 앱이 그대로 사용합니다.")
+def _have_data():
+    return sum(count_images(c) for c in load_classes()) > 0
 
-        with gr.Tab("① 데이터 수집"):
+
+def _have_model():
+    return os.path.exists(BEST_WEIGHTS)
+
+
+def build():
+    with gr.Blocks(title="로봇 학습") as demo:
+        gr.Markdown("# 🧠 로봇 학습\n"
+                    "**① 데이터 모으기 → ② 학습하기 → ③ 내보내기** 순서로 진행하세요.\n"
+                    "_데이터를 모아야 학습 탭이, 학습을 마쳐야 내보내기 탭이 열립니다._")
+
+        with gr.Tab("① 데이터 모으기"):
             with gr.Row():
                 with gr.Column():
                     cam = gr.Image(sources=["webcam"], type="numpy",
-                                   label="웹캠", height=320)
+                                   label="카메라", height=320)
                     with gr.Row():
-                        cls_in = gr.Textbox(label="클래스 이름", scale=2,
-                                            placeholder="예: my_robot")
-                        size_in = gr.Radio(SIZES, value=320, label="저장 크기(px)")
-                    cap_btn = gr.Button("📸 캡처", variant="primary")
+                        cls_in = gr.Textbox(label="무엇을 가르칠까요? (이름)",
+                                            scale=2, placeholder="예: 내 로봇")
+                        size_in = gr.Radio(SIZES, value=320, label="사진 크기")
+                    cap_btn = gr.Button("📸 사진 찍기", variant="primary")
                     cap_status = gr.Markdown("")
+                    gr.Markdown("같은 대상을 각도·거리를 바꿔 20~50장 찍으면 좋아요.")
                 with gr.Column():
-                    cls_dd = gr.Dropdown(_class_choices(), label="클래스 보기",
+                    cls_dd = gr.Dropdown(_class_choices(), label="모은 것 보기",
                                          interactive=True)
-                    gallery = gr.Gallery(label="수집된 데이터(최근 40)",
+                    gallery = gr.Gallery(label="모은 사진(최근 40장)",
                                          columns=4, height=320)
                     with gr.Row():
                         refresh_btn = gr.Button("↻ 새로고침")
-                        del_btn = gr.Button("🗑 클래스 삭제", variant="stop")
+                        del_btn = gr.Button("🗑 이 이름 지우기", variant="stop")
                     counts = gr.Markdown(_counts_md())
 
-            cap_btn.click(capture, [cam, cls_in, size_in],
-                          [cap_status, gallery, cls_dd]).then(
-                _counts_md, None, counts)
-            cls_dd.change(show_gallery, cls_dd, gallery)
-            refresh_btn.click(lambda: (gr.update(choices=_class_choices()),
-                                       _counts_md()), None, [cls_dd, counts])
-            del_btn.click(delete_selected_class, cls_dd,
-                          [cls_dd, gallery, counts])
-
-        with gr.Tab("② 학습"):
+        with gr.Tab("② 학습하기", interactive=_have_data()) as tab2:
             with gr.Row():
-                epochs_in = gr.Number(value=30, label="에폭", precision=0)
+                epochs_in = gr.Number(value=30, label="반복 횟수(에폭)",
+                                      precision=0)
                 imgsz_in = gr.Dropdown([str(s) for s in SIZES], value="320",
-                                       label="이미지 크기")
+                                       label="사진 크기")
                 train_btn = gr.Button("▶ 학습 시작", variant="primary")
-            gr.Markdown("※ CPU 학습이라 느립니다. 클래스당 20~50장, 에폭 10~30 권장.")
-            train_log = gr.Textbox(label="학습 로그", lines=16, max_lines=16,
+            gr.Markdown("※ 시간이 좀 걸립니다. 처음엔 반복 10~30 정도로 해보세요.")
+            train_log = gr.Textbox(label="진행 상황", lines=16, max_lines=16,
                                    autoscroll=True)
-            with gr.Row():
-                result_graph = gr.Image(label="학습 곡선", height=300)
-                result_md = gr.Markdown("")
-            train_btn.click(train, [epochs_in, imgsz_in],
-                            [train_log, result_graph, result_md])
+            result_md = gr.Markdown("")
+            result_graph = gr.Image(label="정밀도-재현율(PR) 곡선", height=460)
 
-        with gr.Tab("③ 적용 / 내보내기"):
-            gr.Markdown("학습한 모델을 ONNX(`active.onnx`)로 변환해 인식에 적용하고, "
-                        "파일로 내려받아 다른 PC로 옮길 수 있습니다.")
-            name_in = gr.Textbox(value="custom", label="모델 이름")
-            exp_btn = gr.Button("🚀 ONNX 변환 & 적용", variant="primary")
+        with gr.Tab("③ 내보내기", interactive=_have_model()) as tab3:
+            gr.Markdown("학습한 모델을 **내려받아 로봇 PC에 넣으면** 인식에 사용됩니다.")
+            name_in = gr.Textbox(value="내모델", label="모델 이름")
+            exp_btn = gr.Button("📦 모델 만들기", variant="primary")
             exp_status = gr.Markdown("")
-            exp_files = gr.File(label="⬇ 다운로드 (active.onnx · active.names · best.pt)",
-                                file_count="multiple")
-            exp_btn.click(export_apply, name_in, [exp_status, exp_files])
+            exp_files = gr.File(label="⬇ 모델 파일 내려받기", file_count="multiple")
 
-        # 앱 로드 시 클래스 보기/카운트 초기화
+        # ---------- 이벤트 ----------
+        def _gate2():
+            return gr.update(interactive=_have_data())
+
+        def _gate3():
+            return gr.update(interactive=_have_model())
+
+        cap_btn.click(capture, [cam, cls_in, size_in],
+                      [cap_status, gallery, cls_dd]).then(
+            _counts_md, None, counts).then(_gate2, None, tab2)
+        cls_dd.change(show_gallery, cls_dd, gallery)
+        refresh_btn.click(lambda: (gr.update(choices=_class_choices()),
+                                   _counts_md()), None, [cls_dd, counts]).then(
+            _gate2, None, tab2)
+        del_btn.click(delete_selected_class, cls_dd,
+                      [cls_dd, gallery, counts]).then(_gate2, None, tab2)
+        train_btn.click(train, [epochs_in, imgsz_in],
+                        [train_log, result_graph, result_md]).then(
+            _gate3, None, tab3)
+        exp_btn.click(export_apply, name_in, [exp_status, exp_files])
+
+        # 앱 로드 시 초기화(클래스 보기/카운트 + 탭 잠금 상태)
         demo.load(init_view, None, [cls_dd, gallery, counts])
+        demo.load(lambda: (_gate2(), _gate3()), None, [tab2, tab3])
 
     return demo
 
@@ -274,4 +294,6 @@ if __name__ == "__main__":
     local = host in ("127.0.0.1", "localhost")
     print(f"[train_app] 서버 시작: http://{host}:{port}  "
           f"(외부 접속은 http://<이 PC IP>:{port})")
-    build().launch(server_name=host, server_port=port, inbrowser=local)
+    # 수집 이미지(dataset/)·결과 그래프(runs/)를 갤러리에서 보여주려면 경로 허용 필요
+    build().launch(server_name=host, server_port=port, inbrowser=local,
+                   allowed_paths=[ROOT])
