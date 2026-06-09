@@ -17,6 +17,7 @@ train_app.py  (gradio 브랜치, v4.x)
 import os
 import sys
 import shutil
+import zipfile
 import subprocess
 
 import cv2
@@ -187,8 +188,9 @@ def _metrics_md(m):
 # ③ 적용 / 내보내기
 # ============================================================
 def export_apply(name):
+    hide = gr.update(visible=False)
     if not os.path.exists(BEST_WEIGHTS):
-        return "② 학습을 먼저 끝내세요(best.pt 없음).", None
+        return "② 학습을 먼저 끝내세요(best.pt 없음).", hide, hide, hide, hide
     name = (name or "custom").strip()
     if not name.endswith(".pt"):
         name += ".pt"
@@ -197,23 +199,29 @@ def export_apply(name):
     try:
         shutil.copy(BEST_WEIGHTS, dst)              # 학습 가중치 보관(best.pt 사본)
         names = export_onnx.apply_pt_as_active(dst, label=name)   # → active.onnx
+        # 3개 파일을 zip 하나로 묶기(일괄 다운로드용)
+        bundle = os.path.join(MODELS_DIR, "robocommander_model.zip")
+        with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as z:
+            if os.path.exists(ACTIVE_ONNX):
+                z.write(ACTIVE_ONNX, "active.onnx")
+            if os.path.exists(ACTIVE_CLASSES):
+                z.write(ACTIVE_CLASSES, "active.names")
+            if os.path.exists(dst):
+                z.write(dst, os.path.basename(dst))
     except Exception as e:
-        return f"✗ 변환 실패: {e}", None
-    # 다운로드: ONNX(추론용) + classes(클래스명) + .pt(원본 가중치/재학습용)
-    files = [p for p in (ACTIVE_ONNX, ACTIVE_CLASSES, dst)
-             if os.path.exists(p)]
+        return f"✗ 변환 실패: {e}", hide, hide, hide, hide
     msg = (
-        f"✓ 변환 완료 — **{name}**, 클래스 {len(names)}개\n\n"
-        "**아래 3개 파일을 다운로드**하세요:\n"
-        "- `active.onnx` — 인식(추론)용 모델\n"
-        "- `active.names` — 클래스 이름 목록\n"
-        f"- `{name}` — 학습 가중치(best.pt 사본, 재학습/재변환용)\n\n"
-        "**📂 저장 위치**: 다운로드한 `active.onnx` + `active.names` 를 "
-        "**런타임 PC의 `gradio/model/` 폴더**에 넣으세요. "
-        "(`.pt` 는 보관용 — `model/` 에 같이 둬도 됩니다)\n"
-        "그 뒤 인식 앱에서 **■ 정지 → ▶ 연결 & 시작** 하면 새 모델이 적용됩니다."
+        f"✓ 모델 완성 — **{name}**, 클래스 {len(names)}개\n\n"
+        "**📂 저장 위치**: 내려받은 `active.onnx` + `active.names` 를 "
+        "**로봇(인식) PC 의 `gradio/model/` 폴더**에 넣고, 인식 앱에서 "
+        "**■ 정지 → ▶ 연결 & 시작** 하면 새 모델이 적용됩니다. "
+        "(`.pt` 는 재학습용 보관 파일)"
     )
-    return msg, files
+    return (msg,
+            gr.update(value=bundle, visible=True),
+            gr.update(value=ACTIVE_ONNX, visible=True),
+            gr.update(value=ACTIVE_CLASSES, visible=True),
+            gr.update(value=dst, visible=True))
 
 
 # ============================================================
@@ -276,9 +284,19 @@ def build():
         with gr.Tab("③ 내보내기", interactive=_have_model()) as tab3:
             gr.Markdown("학습한 모델을 **내려받아 로봇 PC에 넣으면** 인식에 사용됩니다.")
             name_in = gr.Textbox(value="내모델", label="모델 이름")
-            exp_btn = gr.Button("📦 모델 만들기", variant="primary")
+            exp_btn = gr.Button("📦 모델 만들기", variant="primary", size="lg")
             exp_status = gr.Markdown("")
-            exp_files = gr.File(label="⬇ 모델 파일 내려받기", file_count="multiple")
+            dl_all = gr.DownloadButton("⬇  모델 전체 한 번에 받기 (ZIP)",
+                                       variant="primary", size="lg",
+                                       visible=False)
+            gr.Markdown("— 또는 파일별로 —")
+            with gr.Row():
+                dl_onnx = gr.DownloadButton("⬇ 인식 모델 (active.onnx)",
+                                            size="lg", visible=False)
+                dl_names = gr.DownloadButton("⬇ 클래스 이름 (active.names)",
+                                             size="lg", visible=False)
+                dl_pt = gr.DownloadButton("⬇ 학습 가중치 (.pt)",
+                                          size="lg", visible=False)
 
         # ---------- 이벤트 ----------
         def _gate2():
@@ -299,7 +317,8 @@ def build():
         train_btn.click(train, [epochs_in, imgsz_in, patience_in],
                         [train_log, result_graph, result_md]).then(
             _gate3, None, tab3)
-        exp_btn.click(export_apply, name_in, [exp_status, exp_files])
+        exp_btn.click(export_apply, name_in,
+                      [exp_status, dl_all, dl_onnx, dl_names, dl_pt])
 
         # 앱 로드 시 초기화(클래스 보기/카운트 + 탭 잠금 상태)
         demo.load(init_view, None, [cls_dd, gallery, counts])
