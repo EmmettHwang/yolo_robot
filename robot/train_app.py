@@ -263,7 +263,7 @@ def build():
                 epochs_in = gr.Number(value=30, label="반복 횟수(에폭)",
                                       precision=0)
                 patience_in = gr.Number(value=10, precision=0,
-                                        label="조기종료(개선 없는 에폭 수)")
+                                        label="조기종료인내값(patience)")
                 imgsz_in = gr.Dropdown([str(s) for s in SIZES], value="320",
                                        label="사진 크기")
                 train_btn = gr.Button("▶ 학습 시작", variant="primary")
