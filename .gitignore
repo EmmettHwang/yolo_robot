@@ -19,3 +19,8 @@ runs/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# git worktree 하위 폴더(다른 브랜치 체크아웃) — gradio 작업트리에선 무시
+/ultra/
+/main/
+.claude/settings.local.json

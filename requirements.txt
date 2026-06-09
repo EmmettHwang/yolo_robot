@@ -19,6 +19,7 @@ ultralytics>=8.4.0      # export_onnx.py / 학습
 torch>=2.0.0            #   "
 torchvision>=0.15.0     #   "
 onnx>=1.12.0            # ONNX export
+gradio>=5.0             # 로컬 학습 웹앱(train_app.py)
 
 # --- 로봇 시리얼 제어용 ---
 pyserial>=3.5
