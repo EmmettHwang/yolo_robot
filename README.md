@@ -1,6 +1,40 @@
 <div align="center">
 
 # 🤖 YOLO 기반 휴머노이드 ROBO COMMANDER
+## 개요 
+### 1. 이 프로그램은 YOLO 모델을 이용해서 사물인식을 하고 인식된 결과에 따라 로봇이 자율 활동을 하도록 한다.
+### 2. 프로그램은 다음과 같은 Sequence로 진행 된다.
+####    2.1 로봇 장치 설정   
+       <img width="602" height="1012" alt="image" src="https://github.com/user-attachments/assets/50f6f01d-ec8e-4c70-bb1d-5d4602a69e82" />   
+       블루투스 SPP 방식(SRC 4.0칩을 이용한)의 패어링 과정을 거친다.
+       카메라는 휴대폰과도 연결된다(윈도와 휴대폰 연결시)    
+       마이크와 스피커 입.출력을 지정한다.    
+####   2.2 인공지능 학습
+       <img width="1182" height="1032" alt="image" src="https://github.com/user-attachments/assets/b50db27c-4e33-4a9b-8f45-9e5dd4b13790" />
+       기본형 모델로 Yolov5, v8, v11과 호환되며 80가지 사물을 인식한다
+       커스텀 모델을 학습 시킬수 있다.    
+       <img width="982" height="792" alt="image" src="https://github.com/user-attachments/assets/abd63705-f631-41dc-94e6-13e473e2f46b" />    
+       클래스와 데이터의 수는 제한이 없다.
+       학습 결과는     
+       <img width="822" height="792" alt="image" src="https://github.com/user-attachments/assets/691e59d3-6d23-4c13-a7ed-1f00b028c870" />
+       저장되어 커스텀 모델로 사용이 가능하다.      
+       <img width="479" height="278" alt="image" src="https://github.com/user-attachments/assets/984d688d-03fe-45e9-9df6-e15aadee5dce" />
+       커스텀 모델이 적용되면 나만의 AI 모델이 만들어 진다.
+       <img width="1182" height="1032" alt="image" src="https://github.com/user-attachments/assets/04489369-d892-4af2-b138-492c5fbf6a31" />
+####   2.3 인식 및 반응 설정
+       로봇이 인식한 결과에 따라 반응하는 시나리오를 작성한다.     
+       <img width="1182" height="1032" alt="image" src="https://github.com/user-attachments/assets/e19c9dec-5a8b-4386-b80c-2b2426c72b2a" />   
+       모션은 로봇에 저장된 모션의 Index table을 의미     
+       사운드는 mp3, tts, 또는 랜덤 사운드를 제공한다.      
+       주요 mp3 파일은 Assets으로 제공한다.      
+       지속시간은 옵션으로 임의로 지정할 수 있다.        
+####   2.4 자율 활동 시작 
+       로봇은 자율 활동 및 수동 조정이 가능하며 로봇 제어를 통해 최적화 할 수 있다.     
+       <img width="1182" height="1032" alt="image" src="https://github.com/user-attachments/assets/c8c00455-288c-4f91-98e5-5af802e73952" />      
+       AI 기능 및 Sound를 On/Off 가능하며      
+       임의로 중지 할 수 있다.     
+       로봇 제어는 다음 그림과 같다.    
+       <img width="562" height="792" alt="image" src="https://github.com/user-attachments/assets/19cd41de-3dc7-41f8-9d13-cb7d055f8ac4" />   
 
 **버전: `3.30.20260609.0528`**
 
