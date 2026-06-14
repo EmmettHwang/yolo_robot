@@ -18,7 +18,7 @@ import threading
 from robot_controller import HumanoidRobot, MotionSequencer  # noqa: F401  (재노출)
 from motion_table import (
     FORWARD_SEQUENCE, BACKWARD_SEQUENCE, SEQUENCE_DELAY_MS, READY_MOTION,
-    SAFE_SIT, SAFE_UP, POWER_OFF_HOLD,
+    SAFE_SIT, SAFE_UP, POWER_OFF_HOLD, PWR_ON, PWR_OFF,
 )
 from motor_map import ALL_IDS
 import sound
@@ -228,6 +228,27 @@ class MotionRunner:
             if not self.robot.power(False):
                 self._mark_disc()
 
+    def _power_seq(self, on: bool) -> None:
+        """전원 켜기/끄기 시퀀스(로봇제어와 동일). 명령 씹힘 대비 2회 전송."""
+        if not self.robot:
+            return
+        if on:
+            self.robot.power(True)
+            self._wait(0.4)
+            self.robot.power(True)
+            self._wait(0.6)
+            self.robot.send_motion(SAFE_UP)        # 61 일어서기
+            self._wait(0.4)
+            self.robot.send_motion(SAFE_UP)
+        else:
+            self.robot.send_motion(SAFE_SIT)       # 60 앉기
+            self._wait(0.4)
+            self.robot.send_motion(SAFE_SIT)
+            self._wait(POWER_OFF_HOLD)             # 7초
+            self.robot.power(False)
+            self._wait(0.3)
+            self.robot.power(False)
+
     def _wait(self, secs: float) -> bool:
         """secs 동안 대기. 종료(_stop)나 동작중지(_cancel_action) 시 True 반환(중단)."""
         step = 0.05
@@ -386,7 +407,11 @@ class MotionRunner:
                     sound.player.play_effect(sound.FX_START)
                 if sound_on and kind and kind != sound.NONE:
                     sound.player.play(kind, val)
-                if motion and self.robot:
+                if motion == PWR_ON:                  # 전원 켜기 시퀀스
+                    self._power_seq(True)
+                elif motion == PWR_OFF:               # 전원 끄기 시퀀스
+                    self._power_seq(False)
+                elif motion and self.robot:
                     self.robot.send_motion(int(motion))
                 if self._wait(hold):
                     return

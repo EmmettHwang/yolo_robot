@@ -27,7 +27,7 @@ from paths import OBJECT_ACTIONS_JSON, DATA_DIR
 import sound as snd
 import mp3_library
 from motion_table import (
-    ALL_MOTIONS, motion_label, COCO_CLASSES, coco_kr,
+    ALL_MOTIONS, motion_label, COCO_CLASSES, coco_kr, PWR_ON, PWR_OFF,
 )
 
 MAX_STEPS = 5
@@ -129,8 +129,9 @@ class ActionEditor(ttk.Frame):
                 base.append(k)
         self.all_objects = base
         self._obj_num = {o: i + 1 for i, o in enumerate(self.all_objects)}
-        self._motion_values = [NONE_MOTION] + [motion_label(n)
-                                               for n in ALL_MOTIONS]
+        self._motion_values = ([NONE_MOTION]
+                               + [motion_label(n) for n in ALL_MOTIONS]
+                               + [motion_label(PWR_ON), motion_label(PWR_OFF)])
         self.groups = []         # 각 객체 그룹
         self._disp_to_name = {}
         self.mp3_items = mp3_library.list_mp3()
@@ -330,6 +331,13 @@ class ActionEditor(ttk.Frame):
         de.bind("<FocusOut>", lambda e: self._autosave())
         step["dur_var"] = dv
 
+        # 순서 이동 ▲/▼
+        tk.Button(fr, text="▲", width=2, cursor="hand2", relief="flat",
+                  command=lambda g=group, s=step: self._move_step(g, s, -1)
+                  ).pack(side="left", padx=(6, 0))
+        tk.Button(fr, text="▼", width=2, cursor="hand2", relief="flat",
+                  command=lambda g=group, s=step: self._move_step(g, s, 1)
+                  ).pack(side="left")
         tk.Button(fr, text="✕", width=2, cursor="hand2", relief="flat",
                   command=lambda g=group, s=step: self._del_step(g, s)).pack(
             side="left", padx=(6, 0))
@@ -339,6 +347,20 @@ class ActionEditor(ttk.Frame):
         self._update_add_btn(group)
         if data == {}:
             self._autosave()
+
+    def _move_step(self, group, step, direction):
+        """동작(서브 스텝) 순서를 위(-1)/아래(+1)로 이동."""
+        steps = group["steps"]
+        i = steps.index(step)
+        j = i + direction
+        if not (0 <= j < len(steps)):
+            return
+        steps[i], steps[j] = steps[j], steps[i]
+        for st in steps:                 # 현재 순서대로 다시 배치
+            st["frame"].pack_forget()
+        for st in steps:
+            st["frame"].pack(fill="x", pady=1)
+        self._autosave()
 
     def _del_step(self, group, step):
         step["frame"].destroy()
