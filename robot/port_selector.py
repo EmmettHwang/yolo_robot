@@ -833,13 +833,13 @@ class PortSelector:
             PALETTE = [(255, 0, 0), (0, 255, 0), (0, 128, 255),
                        (255, 200, 0), (255, 0, 255), (0, 255, 255),
                        (255, 255, 255)]
-            FSTEPS = 8                          # 페이드 인/아웃 각 단계
-            FDT = 0.5 / (2 * FSTEPS)            # 모터 1개당 ≈ 500ms
+            FSTEPS = 6                          # 페이드 인 단계
+            FDT = 0.2 / FSTEPS                  # 모터 1개당 페이드 인 ≈ 200ms
             cycle = 0
             # 멈춤 버튼 누를 때까지 계속 반복
             while not cancel.is_set():
-                # ① 순차 점등: ID 순서로 한 모터씩 페이드 인→아웃(약 500ms).
-                #    한 사이클(18개) 돌면 다음 색으로.
+                # ① 순차 점등: ID 순서로 한 모터씩 페이드 인(≈200ms) 후 켜진 채 유지.
+                #    18개 다 켜지면 200ms 간격으로 3회 깜빡. 한 사이클마다 색 변경.
                 cr, cg, cb = PALETTE[cycle % len(PALETTE)]
                 cycle += 1
                 for mid in SEQ_ORDER:
@@ -847,17 +847,7 @@ class PortSelector:
                         break
                     self._ui(lambda m=mid: self.led_test_status.config(
                         text=f"① 순차 점등  ID {m}", fg="#1565c0"))
-                    # 페이드 인 (어둡→밝)
-                    for s in range(1, FSTEPS + 1):
-                        if cancel.is_set():
-                            break
-                        f = s / FSTEPS
-                        robot.send_leds([(mid, int(cr * f), int(cg * f),
-                                          int(cb * f))])
-                        if cancel.wait(FDT):
-                            break
-                    # 페이드 아웃 (밝→어둡)
-                    for s in range(FSTEPS, -1, -1):
+                    for s in range(1, FSTEPS + 1):       # 페이드 인(켜진 채 유지)
                         if cancel.is_set():
                             break
                         f = s / FSTEPS
@@ -867,6 +857,21 @@ class PortSelector:
                             break
                 if cancel.is_set():
                     break
+                # 다 켜진 상태에서 200ms 간격 3회 깜빡
+                self._ui(lambda: self.led_test_status.config(
+                    text="① 전체 점등 → 깜빡 ✨", fg="#1565c0"))
+                for _ in range(3):
+                    if cancel.is_set():
+                        break
+                    robot.send_leds([(i, 0, 0, 0) for i in SEQ_ORDER])
+                    if cancel.wait(0.2):
+                        break
+                    robot.send_leds([(i, cr, cg, cb) for i in SEQ_ORDER])
+                    if cancel.wait(0.2):
+                        break
+                if cancel.is_set():
+                    break
+                robot.send_leds([(i, 0, 0, 0) for i in ids])   # 끄고 무지개로
 
                 # ② 무지개: 페이드 인 → 천천히 회전 → 페이드 아웃 (확실하게)
                 base = [(i, self._rainbow((i - 1) / 18.0)) for i in ids]
