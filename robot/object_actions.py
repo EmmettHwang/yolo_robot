@@ -28,7 +28,9 @@ import sound as snd
 import mp3_library
 from motion_table import (
     ALL_MOTIONS, motion_label, COCO_CLASSES, coco_kr, PWR_ON, PWR_OFF,
+    VOICE_CHAT,
 )
+import voice_chat
 
 MAX_STEPS = 5
 NONE_MOTION = "(없음)"
@@ -131,7 +133,8 @@ class ActionEditor(ttk.Frame):
         self._obj_num = {o: i + 1 for i, o in enumerate(self.all_objects)}
         self._motion_values = ([NONE_MOTION]
                                + [motion_label(n) for n in ALL_MOTIONS]
-                               + [motion_label(PWR_ON), motion_label(PWR_OFF)])
+                               + [motion_label(PWR_ON), motion_label(PWR_OFF),
+                                  motion_label(VOICE_CHAT)])
         self.groups = []         # 각 객체 그룹
         self._disp_to_name = {}
         self.mp3_items = mp3_library.list_mp3()
@@ -163,6 +166,24 @@ class ActionEditor(ttk.Frame):
                   command=self._add_selected).pack(side="left")
         tk.Button(add, text="↻ mp3/목록 새로고침", cursor="hand2",
                   command=self._refresh_all).pack(side="left", padx=(8, 0))
+
+        # 음성 대화 LLM 모델 선택(모션에서 '음성 대화' 고를 때 사용)
+        vrow = tk.Frame(self); vrow.pack(fill="x", padx=12, pady=(0, 4))
+        tk.Label(vrow, text="🎤 음성대화 모델:", font=("Malgun Gothic", 9),
+                 fg="#555").pack(side="left")
+        self.voice_model_var = tk.StringVar(value=voice_chat.load_cfg()
+                                            .get("model", ""))
+        self.voice_combo = ttk.Combobox(vrow, textvariable=self.voice_model_var,
+                                        state="readonly", width=24)
+        self.voice_combo.pack(side="left", padx=(4, 4))
+        self.voice_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda e: voice_chat.save_cfg(model=self.voice_model_var.get()))
+        tk.Button(vrow, text="↻ 모델 목록", cursor="hand2",
+                  command=self._refresh_voice_models).pack(side="left")
+        tk.Label(vrow, text="(로컬 Ollama 실행 필요)", font=("Malgun Gothic", 8),
+                 fg="#999").pack(side="left", padx=(6, 0))
+        self._refresh_voice_models()
 
         # 스크롤 영역
         wrap = tk.Frame(self); wrap.pack(fill="both", expand=True, padx=12,
@@ -208,6 +229,16 @@ class ActionEditor(ttk.Frame):
             self.add_combo.current(0)
         else:
             self.add_var.set("(검색결과 없음)" if q else "(모든 객체 지정됨)")
+
+    def _refresh_voice_models(self):
+        models = voice_chat.list_models()
+        self.voice_combo["values"] = models or ["(Ollama 실행/모델 없음)"]
+        cur = self.voice_model_var.get()
+        if cur and cur in models:
+            self.voice_combo.set(cur)
+        elif models:
+            self.voice_combo.set(models[0])
+            voice_chat.save_cfg(model=models[0])
 
     def _refresh_all(self):
         self.mp3_items = mp3_library.list_mp3()

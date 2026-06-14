@@ -50,10 +50,12 @@ SAFE_SIT = 60          # 전원 끄기 전 앉기
 SAFE_UP = 61           # 전원 켠 뒤 일어서기
 POWER_OFF_HOLD = 7.0   # Safe Sit 후 전원 끄기까지 대기(초)
 
-# 인식 반응/드롭다운용 가상 코드(실제 모션 번호 아님) — 전원 시퀀스를 모션처럼 선택
+# 인식 반응/드롭다운용 가상 코드(실제 모션 번호 아님)
 PWR_ON = 1001          # 전원 켜기(전원 ON → 일어서기)
 PWR_OFF = 1002         # 전원 끄기(앉기 → 7초 → 전원 OFF)
-PWR_LABELS = {PWR_ON: "전원 켜기", PWR_OFF: "전원 끄기"}
+VOICE_CHAT = 1003      # 음성 대화(마이크→LLM→스피커)
+PWR_LABELS = {PWR_ON: "전원 켜기", PWR_OFF: "전원 끄기",
+              VOICE_CHAT: "음성 대화"}
 
 
 def motion_name(idx: int) -> str:

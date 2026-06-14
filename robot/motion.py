@@ -18,7 +18,7 @@ import threading
 from robot_controller import HumanoidRobot, MotionSequencer  # noqa: F401  (재노출)
 from motion_table import (
     FORWARD_SEQUENCE, BACKWARD_SEQUENCE, SEQUENCE_DELAY_MS, READY_MOTION,
-    SAFE_SIT, SAFE_UP, POWER_OFF_HOLD, PWR_ON, PWR_OFF,
+    SAFE_SIT, SAFE_UP, POWER_OFF_HOLD, PWR_ON, PWR_OFF, VOICE_CHAT,
 )
 from motor_map import ALL_IDS
 import sound
@@ -415,6 +415,12 @@ class MotionRunner:
                     self._power_seq(True)
                 elif motion == PWR_OFF:               # 전원 끄기 시퀀스
                     self._power_seq(False)
+                elif motion == VOICE_CHAT:            # 음성 대화(마이크→LLM→스피커)
+                    try:
+                        import voice_chat
+                        voice_chat.run_chat()
+                    except Exception:
+                        pass
                 elif motion and self.robot:
                     self.robot.send_motion(int(motion))
                 if self._wait(hold):
