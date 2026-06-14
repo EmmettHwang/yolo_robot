@@ -229,14 +229,18 @@ class MotionRunner:
                 self._mark_disc()
 
     def _power_seq(self, on: bool) -> None:
-        """전원 켜기/끄기 시퀀스(로봇제어와 동일). 명령 씹힘 대비 2회 전송."""
+        """전원 켜기/끄기 시퀀스(로봇제어/장치설정과 동일). 명령 씹힘 대비 2회 전송."""
         if not self.robot:
             return
+        if self.effects_on:                        # 전원 효과음
+            sound.player.play_effect(
+                sound.FX_POWER_ON if on else sound.FX_POWER_OFF)
+        self._wait(0.3)                            # 직전(LED) 명령과 간격
         if on:
             self.robot.power(True)
             self._wait(0.4)
-            self.robot.power(True)
-            self._wait(0.6)
+            self.robot.power(True)                 # 씹힘 대비 2회
+            self._wait(0.6)                        # 토크 안정 대기
             self.robot.send_motion(SAFE_UP)        # 61 일어서기
             self._wait(0.4)
             self.robot.send_motion(SAFE_UP)

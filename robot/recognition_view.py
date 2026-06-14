@@ -254,6 +254,10 @@ class RecognitionView(ttk.Frame):
                                    justify="left", font=("Malgun Gothic", 10))
         for w in (self.lbl_conn, self.lbl_obj, self.lbl_motion):
             w.pack(fill="x", pady=1)
+        tk.Button(disp, text="🗑 인식 초기화", cursor="hand2",
+                  bg="#607d8b", fg="white", relief="flat",
+                  font=("Malgun Gothic", 9, "bold"),
+                  command=self._clear_recognition).pack(anchor="w", pady=(4, 0))
 
         gwrap = tk.Frame(body); gwrap.pack(side="left", padx=(10, 0))
         tk.Label(gwrap, text="동작 버튼 (4×4)",
@@ -663,6 +667,15 @@ class RecognitionView(ttk.Frame):
         self._empty = 0
         with self._lock:
             self._dets = np.empty((0, 6))
+
+    def _clear_recognition(self):
+        """버튼: 인식/직전 인식 등 화면 표시와 추적 상태를 모두 초기화."""
+        self._reset_recognition_state()
+        try:
+            self.lbl_obj.config(text="인식: -")
+            self.lbl_motion.config(text="직전 인식: -")
+        except Exception:
+            pass
 
     def _reload_mapping(self):
         self.reload_mapping()
