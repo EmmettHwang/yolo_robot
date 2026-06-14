@@ -100,11 +100,8 @@ def _speak(text: str) -> None:
     if not text:
         return
     try:
-        import pyttsx3
-        eng = pyttsx3.init()
-        eng.say(text)
-        eng.runAndWait()
-        eng.stop()
+        import sound
+        sound.speak_blocking(text)        # Windows SAPI(안정) + pyttsx3 폴백
     except Exception:
         pass
 
