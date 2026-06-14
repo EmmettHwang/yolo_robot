@@ -857,6 +857,17 @@ class PortSelector:
                             break
                 if cancel.is_set():
                     break
+                # 18번까지 켜졌으면 고개(ID 18) 좌우 15도 흔들고 중앙 복귀
+                self._ui(lambda: self.led_test_status.config(
+                    text="① 고개 좌우 흔들기 ↔", fg="#6a1b9a"))
+                for pos in (15, -15, 0):
+                    if cancel.is_set():
+                        break
+                    robot.send_positions([(18, pos, 40)])   # 머리 위치 제어
+                    if cancel.wait(0.45):
+                        break
+                if cancel.is_set():
+                    break
                 # 다 켜진 상태에서 200ms 간격 3회 깜빡
                 self._ui(lambda: self.led_test_status.config(
                     text="① 전체 점등 → 깜빡 ✨", fg="#1565c0"))
