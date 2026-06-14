@@ -318,6 +318,7 @@ class PortSelector:
         # ---- LED 테스트 상태 ----
         self._led_test_running = False
         self._led_cancel = threading.Event()
+        self._pending_motion = None      # LED 중 동작 테스트로 끼워 보낼 모션
         self.led_test_btn = None
         self.led_test_status = None
         self._motormap_img = None
@@ -678,6 +679,13 @@ class PortSelector:
     def _start_motion_test(self) -> None:
         if self._motion_test_running:
             return
+        # LED 테스트가 도는 중이면 같은 연결로 모션만 끼워 보낸다(포트 충돌 방지)
+        if self._led_test_running:
+            self._pending_motion = self._selected_motion()
+            self.motion_test_status.config(
+                text=f"LED 진행 중 — 모션 {self._pending_motion} 예약(곧 전송)",
+                fg="#1565c0")
+            return
         if not self._ports or self.port_combo.current() < 0:
             self.motion_test_status.config(text="시리얼 포트를 먼저 선택하세요",
                                            fg="#c62828")
@@ -795,6 +803,7 @@ class PortSelector:
         port = self._ports[self.port_combo.current()].device
         self._led_test_running = True
         self._led_cancel.clear()
+        self._pending_motion = None       # 이전 예약 모션 초기화
         self.led_test_btn.config(text="■  LED 중지")
         self.led_test_status.config(text="🌈 LED 테스트 시작...", fg="#1565c0")
         threading.Thread(target=self._led_test_worker, args=(port,),
@@ -804,6 +813,19 @@ class PortSelector:
         # 취소 신호만 보낸다. 포트를 여기서 닫으면 finally의 '모션 1 복귀'가
         # 전송 실패하므로, 워커 루프가 스스로 끝내고 복귀/정리하도록 둔다.
         self._led_cancel.set()
+
+    def _drain_pending_motion(self, robot) -> None:
+        """LED 중 동작 테스트로 예약된 모션을 (LED 스레드에서) 한 번 전송."""
+        m = self._pending_motion
+        if m is None:
+            return
+        self._pending_motion = None
+        try:
+            robot.send_motion(int(m))
+            self._ui(lambda mm=m: self.motion_test_status.config(
+                text=f"LED 중 모션 {mm} 전송됨 ✓", fg="#2e7d32"))
+        except Exception:
+            pass
 
     def _led_test_worker(self, port: str) -> None:
         cancel = self._led_cancel
@@ -845,6 +867,7 @@ class PortSelector:
                 for mid in SEQ_ORDER:
                     if cancel.is_set():
                         break
+                    self._drain_pending_motion(robot)   # LED 중 모션 끼워 전송
                     self._ui(lambda m=mid: self.led_test_status.config(
                         text=f"① 순차 점등  ID {m}", fg="#1565c0"))
                     for s in range(1, FSTEPS + 1):       # 페이드 인(켜진 채 유지)
@@ -857,10 +880,10 @@ class PortSelector:
                             break
                 if cancel.is_set():
                     break
-                # 18번까지 켜졌으면 고개(ID 18) 좌우 15도 흔들고 중앙 복귀
+                # 18번까지 켜졌으면 고개(ID 18) 좌우 30도 흔들고 중앙 복귀
                 self._ui(lambda: self.led_test_status.config(
                     text="① 고개 좌우 흔들기 ↔", fg="#6a1b9a"))
-                for pos in (15, -15, 0):
+                for pos in (30, -30, 0):
                     if cancel.is_set():
                         break
                     robot.send_positions([(18, pos, 40)])   # 머리 위치 제어
@@ -902,6 +925,7 @@ class PortSelector:
                 for t in range(18):
                     if cancel.is_set():
                         break
+                    self._drain_pending_motion(robot)   # LED 중 모션 끼워 전송
                     leds = [(i,) + self._rainbow((i - 1) / 18.0 + t / 18.0)
                             for i in ids]
                     robot.send_leds(leds)
