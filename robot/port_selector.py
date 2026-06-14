@@ -885,22 +885,30 @@ class PortSelector:
             if on:
                 if sound:
                     sound.player.play_effect(sound.FX_POWER_ON)   # 전원 ON 효과음
-                # 로봇제어 _run_safe_power 와 동일: 전원 ON → 0.3초 → 일어서기
-                robot.power(True)                     # 전원(토크) ON
                 self._ui(lambda: self.motion_test_status.config(
                     text="🔌 전원 ON → 일어서는 중...", fg="#1565c0"))
-                time.sleep(0.3)
-                robot.send_motion(SAFE_UP)            # 61 일어서기
+                # 전원(토크) ON — 첫 패킷 씹힘 대비 2회 전송 후 토크 안정 대기
+                robot.power(True)
+                time.sleep(0.4)
+                robot.power(True)
+                time.sleep(0.6)                       # 토크 확실히 들어온 뒤
+                robot.send_motion(SAFE_UP)            # 61 일어서기(2회로 확실히)
+                time.sleep(0.4)
+                robot.send_motion(SAFE_UP)
                 self._ui(lambda: self.motion_test_status.config(
                     text="🔌 전원 켜짐 (일어서기)", fg="#2e7d32"))
             else:
                 if sound:
                     sound.player.play_effect(sound.FX_POWER_OFF)  # 전원 OFF 효과음
-                # 로봇제어와 동일: 앉기 → 7초 → 전원 OFF
-                robot.send_motion(SAFE_SIT)           # 60 앉기
                 self._ui(lambda h=POWER_OFF_HOLD: self.motion_test_status.config(
                     text=f"⏻ 앉는 중... {h}초 뒤 전원 끔", fg="#1565c0"))
+                # 앉기 — 씹힘 대비 2회 → 7초 → 전원 OFF 2회
+                robot.send_motion(SAFE_SIT)           # 60 앉기
+                time.sleep(0.4)
+                robot.send_motion(SAFE_SIT)
                 time.sleep(POWER_OFF_HOLD)            # 7초 대기
+                robot.power(False)
+                time.sleep(0.3)
                 robot.power(False)                    # 전원(토크) OFF
                 self._ui(lambda: self.motion_test_status.config(
                     text="⏻ 전원 꺼짐 (앉기 후 토크 OFF)", fg="#2e7d32"))
