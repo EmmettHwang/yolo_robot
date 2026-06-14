@@ -28,7 +28,7 @@ import yolo as yolo_mod
 import sound as snd
 import object_actions
 from motion_table import coco_kr, motion_name
-from paths import CONFIG_INI, DATA_DIR, ACTIVE_ONNX
+from paths import CONFIG_INI, DATA_DIR, ACTIVE_ONNX, OBJECT_ACTIONS_JSON
 from robot_controller import HumanoidRobot
 from motion import MotionRunner
 from motion_table import FORWARD_SEQUENCE, BACKWARD_SEQUENCE
@@ -130,6 +130,8 @@ class RecognitionView(ttk.Frame):
         self._last_acted = ""
         self._last_trigger = 0.0
         self._empty = 0
+        self._map_mtime = self._actions_mtime()   # 반응 설정 파일 변경 감지용
+        self._last_map_check = 0.0
         # 인식 지속시간 추적
         self._cur_obj = ""
         self._cur_start = 0.0
@@ -554,6 +556,7 @@ class RecognitionView(ttk.Frame):
     # 렌더 루프 (메인 스레드)
     # ============================================================
     def _schedule_render(self):
+        self._check_mapping_changed()      # 반응 설정 실시간 반영(약 1초 간격)
         self._render()
         if self.running:          # 정지(끊김 포함)되면 더 이상 예약하지 않음
             self._after_id = self.after(33, self._schedule_render)
@@ -714,9 +717,29 @@ class RecognitionView(ttk.Frame):
             f"인식 설정(신뢰도 ≥ {self.conf_threshold:.2f}, 최대 {self.max_det})과\n"
             f"동작 버튼(4×4)을 저장했습니다.")
 
+    def _actions_mtime(self):
+        try:
+            return os.path.getmtime(OBJECT_ACTIONS_JSON) \
+                if os.path.exists(OBJECT_ACTIONS_JSON) else 0.0
+        except Exception:
+            return 0.0
+
+    def _check_mapping_changed(self):
+        """반응 설정 파일이 바뀌었으면 실시간으로 다시 불러온다(약 1초 간격)."""
+        nowt = time.time()
+        if nowt - self._last_map_check < 1.0:
+            return
+        self._last_map_check = nowt
+        mt = self._actions_mtime()
+        if mt and mt != self._map_mtime:
+            self._map_mtime = mt
+            self.reload_mapping()
+            self._log("⟳ 반응 설정 변경 감지 — 실시간 반영")
+
     def reload_mapping(self):
         """객체 반응 매핑을 조용히 다시 불러온다(자동 호출용)."""
         self.mapping = object_actions.load_actions()
+        self._map_mtime = self._actions_mtime()
 
     def _reset_recognition_state(self):
         """인식/직전 인식/지속시간 등 추적 상태 초기화."""
