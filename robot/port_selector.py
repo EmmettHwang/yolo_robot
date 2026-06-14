@@ -847,29 +847,13 @@ class PortSelector:
                     text=f"LED 중 모션 {mm} 전송됨 ✓", fg="#2e7d32"))
             except Exception:
                 pass
-        p = self._pending_power
-        if p is not None:
-            self._pending_power = None
-            try:
-                if not p:
-                    robot.send_motion(60)      # 끄기 전 안전하게 앉기
-                robot.power(bool(p))
-                self._ui(lambda on=p: self.motion_test_status.config(
-                    text=f"LED 중 전원 {'ON' if on else 'OFF'} ✓", fg="#2e7d32"))
-            except Exception:
-                pass
 
     # ---------- 전원 켜기/끄기 ----------
     def _start_power(self, on: bool) -> None:
-        if self._led_test_running:        # LED 중이면 같은 연결로 예약 전송
-            self._pending_power = on
+        # 안전 전원은 시퀀스(앉기→7초→OFF / ON→일어서기)라 포트를 단독 사용
+        if self._led_test_running or self._motion_test_running:
             self.motion_test_status.config(
-                text=f"LED 중 — 전원 {'켜기' if on else '끄기'} 예약(곧 전송)",
-                fg="#1565c0")
-            return
-        if self._motion_test_running:
-            self.motion_test_status.config(
-                text="동작 테스트 중지 후 전원 버튼을 사용하세요", fg="#c62828")
+                text="동작/LED 테스트 중지 후 전원 버튼을 사용하세요", fg="#c62828")
             return
         if not self._ports or self.port_combo.current() < 0:
             self.motion_test_status.config(text="시리얼 포트를 먼저 선택하세요",
@@ -880,9 +864,11 @@ class PortSelector:
                          daemon=True).start()
 
     def _power_worker(self, port: str, on: bool) -> None:
+        """로봇제어의 safe_power 와 동일: 켜기=전원ON→일어서기, 끄기=앉기→7초→전원OFF."""
         robot = None
         try:
             from robot_controller import HumanoidRobot
+            from motion_table import SAFE_SIT, SAFE_UP, POWER_OFF_HOLD
             robot = HumanoidRobot(port, self.baudrate)
             robot.connect()
             if not robot.is_connected:
@@ -890,13 +876,19 @@ class PortSelector:
                     text=f"✗ {port} 를 열지 못했습니다.", fg="#c62828"))
                 return
             if on:
-                robot.power(True)
+                robot.power(True)                     # 전원(토크) ON
                 self._ui(lambda: self.motion_test_status.config(
-                    text="🔌 전원 켜짐 (토크 ON)", fg="#2e7d32"))
+                    text="🔌 전원 ON → 일어서는 중...", fg="#1565c0"))
+                time.sleep(0.3)
+                robot.send_motion(SAFE_UP)            # 61 일어서기
+                self._ui(lambda: self.motion_test_status.config(
+                    text="🔌 전원 켜짐 (일어서기 완료)", fg="#2e7d32"))
             else:
-                robot.send_motion(60)          # Safe Sit: 앉힌 뒤
-                time.sleep(1.0)
-                robot.power(False)             # 토크 해제
+                robot.send_motion(SAFE_SIT)           # 60 앉기
+                self._ui(lambda h=POWER_OFF_HOLD: self.motion_test_status.config(
+                    text=f"⏻ 앉는 중... {h}초 뒤 전원 끔", fg="#1565c0"))
+                time.sleep(POWER_OFF_HOLD)            # 7초 대기(안정 후)
+                robot.power(False)                    # 전원(토크) OFF
                 self._ui(lambda: self.motion_test_status.config(
                     text="⏻ 전원 꺼짐 (앉기 후 토크 OFF)", fg="#2e7d32"))
         except Exception as e:
