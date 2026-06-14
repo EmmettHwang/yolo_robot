@@ -319,6 +319,7 @@ class PortSelector:
         self._led_test_running = False
         self._led_cancel = threading.Event()
         self._pending_motion = None      # LED 중 동작 테스트로 끼워 보낼 모션
+        self._pending_power = None        # LED 중 전원 켜기/끄기 예약(True/False)
         self.led_test_btn = None
         self.led_test_status = None
         self._motormap_img = None
@@ -532,6 +533,21 @@ class PortSelector:
             command=self._start_led_test, style="Big.TButton",
         )
         self.led_test_btn.pack(side="left", padx=(6, 0))
+
+        # 전원 켜기/끄기 (기본)
+        prow = tk.Frame(ctrl); prow.pack(anchor="w", pady=(6, 0))
+        tk.Button(prow, text="🔌 전원 켜기", bg="#28a745", fg="white",
+                  relief="flat", cursor="hand2", width=12,
+                  font=("Malgun Gothic", 9, "bold"),
+                  command=lambda: self._start_power(True)).pack(side="left")
+        tk.Button(prow, text="⏻ 전원 끄기", bg="#c62828", fg="white",
+                  relief="flat", cursor="hand2", width=12,
+                  font=("Malgun Gothic", 9, "bold"),
+                  command=lambda: self._start_power(False)).pack(
+            side="left", padx=(6, 0))
+        tk.Label(prow, text="(끄기: 앉은 뒤 토크 해제)",
+                 font=("Malgun Gothic", 8), fg="#999").pack(side="left",
+                                                            padx=(6, 0))
 
         self.motion_test_status = tk.Label(
             ctrl, text="포트가 맞는지 모르면 눌러보세요", fg="gray",
@@ -815,17 +831,77 @@ class PortSelector:
         self._led_cancel.set()
 
     def _drain_pending_motion(self, robot) -> None:
-        """LED 중 동작 테스트로 예약된 모션을 (LED 스레드에서) 한 번 전송."""
+        """LED 중 예약된 모션/전원 명령을 (LED 스레드에서) 한 번 전송."""
         m = self._pending_motion
-        if m is None:
+        if m is not None:
+            self._pending_motion = None
+            try:
+                robot.send_motion(int(m))
+                self._ui(lambda mm=m: self.motion_test_status.config(
+                    text=f"LED 중 모션 {mm} 전송됨 ✓", fg="#2e7d32"))
+            except Exception:
+                pass
+        p = self._pending_power
+        if p is not None:
+            self._pending_power = None
+            try:
+                if not p:
+                    robot.send_motion(60)      # 끄기 전 안전하게 앉기
+                robot.power(bool(p))
+                self._ui(lambda on=p: self.motion_test_status.config(
+                    text=f"LED 중 전원 {'ON' if on else 'OFF'} ✓", fg="#2e7d32"))
+            except Exception:
+                pass
+
+    # ---------- 전원 켜기/끄기 ----------
+    def _start_power(self, on: bool) -> None:
+        if self._led_test_running:        # LED 중이면 같은 연결로 예약 전송
+            self._pending_power = on
+            self.motion_test_status.config(
+                text=f"LED 중 — 전원 {'켜기' if on else '끄기'} 예약(곧 전송)",
+                fg="#1565c0")
             return
-        self._pending_motion = None
+        if self._motion_test_running:
+            self.motion_test_status.config(
+                text="동작 테스트 중지 후 전원 버튼을 사용하세요", fg="#c62828")
+            return
+        if not self._ports or self.port_combo.current() < 0:
+            self.motion_test_status.config(text="시리얼 포트를 먼저 선택하세요",
+                                           fg="#c62828")
+            return
+        port = self._ports[self.port_combo.current()].device
+        threading.Thread(target=self._power_worker, args=(port, on),
+                         daemon=True).start()
+
+    def _power_worker(self, port: str, on: bool) -> None:
+        robot = None
         try:
-            robot.send_motion(int(m))
-            self._ui(lambda mm=m: self.motion_test_status.config(
-                text=f"LED 중 모션 {mm} 전송됨 ✓", fg="#2e7d32"))
-        except Exception:
-            pass
+            from robot_controller import HumanoidRobot
+            robot = HumanoidRobot(port, self.baudrate)
+            robot.connect()
+            if not robot.is_connected:
+                self._ui(lambda: self.motion_test_status.config(
+                    text=f"✗ {port} 를 열지 못했습니다.", fg="#c62828"))
+                return
+            if on:
+                robot.power(True)
+                self._ui(lambda: self.motion_test_status.config(
+                    text="🔌 전원 켜짐 (토크 ON)", fg="#2e7d32"))
+            else:
+                robot.send_motion(60)          # Safe Sit: 앉힌 뒤
+                time.sleep(1.0)
+                robot.power(False)             # 토크 해제
+                self._ui(lambda: self.motion_test_status.config(
+                    text="⏻ 전원 꺼짐 (앉기 후 토크 OFF)", fg="#2e7d32"))
+        except Exception as e:
+            self._ui(lambda ex=e: self.motion_test_status.config(
+                text=f"✗ 전원 명령 실패: {ex}", fg="#c62828"))
+        finally:
+            if robot is not None:
+                try:
+                    robot.close()
+                except Exception:
+                    pass
 
     def _led_test_worker(self, port: str) -> None:
         cancel = self._led_cancel
