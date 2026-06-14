@@ -898,8 +898,6 @@ class PortSelector:
                 self._ui(lambda: self.motion_test_status.config(
                     text="🔌 전원 켜짐 (일어서기)", fg="#2e7d32"))
             else:
-                if sound:
-                    sound.player.play_effect(sound.FX_POWER_OFF)  # 전원 OFF 효과음
                 self._ui(lambda h=POWER_OFF_HOLD: self.motion_test_status.config(
                     text=f"⏻ 앉는 중... {h}초 뒤 전원 끔", fg="#1565c0"))
                 # 앉기 — 씹힘 대비 2회 → 7초 → 전원 OFF 2회
@@ -910,6 +908,8 @@ class PortSelector:
                 robot.power(False)
                 time.sleep(0.3)
                 robot.power(False)                    # 전원(토크) OFF
+                if sound:                             # 전원 꺼진 뒤 효과음
+                    sound.player.play_effect(sound.FX_POWER_OFF)
                 self._ui(lambda: self.motion_test_status.config(
                     text="⏻ 전원 꺼짐 (앉기 후 토크 OFF)", fg="#2e7d32"))
         except Exception as e:
