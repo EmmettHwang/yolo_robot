@@ -517,7 +517,7 @@ class PortSelector:
         # 번호 + 이름 함께 (직접 번호 입력도 가능)
         self.motion_combo = ttk.Combobox(
             mrow, width=22, values=[motion_label(n) for n in ALL_MOTIONS])
-        self.motion_combo.set(motion_label(19))
+        self.motion_combo.set(motion_label(1))      # 기본: 1번(기본 자세)
         self.motion_combo.pack(side="left", padx=(6, 0))
 
         brow = tk.Frame(ctrl); brow.pack(anchor="w")
@@ -673,7 +673,7 @@ class PortSelector:
                 return int(t.split(" - ")[0])
             return int(t)
         except Exception:
-            return 19
+            return 1
 
     def _start_motion_test(self) -> None:
         if self._motion_test_running:
@@ -827,20 +827,44 @@ class PortSelector:
             self._ui(lambda: self.led_test_status.config(
                 text="동작 17 실행 + LED 쇼 (멈출 때까지)", fg="#6a1b9a"))
 
-            SEQ_COLOR = (0, 200, 255)        # 순차 점등 단일색(시안)
+            # 순차 점등 ID 순서: 오른쪽(홀) → 왼쪽(짝) → 허리 → 머리
+            SEQ_ORDER = [1, 3, 5, 7, 9, 11, 13, 15,
+                         2, 4, 6, 8, 10, 12, 14, 16, 17, 18]
+            PALETTE = [(255, 0, 0), (0, 255, 0), (0, 128, 255),
+                       (255, 200, 0), (255, 0, 255), (0, 255, 255),
+                       (255, 255, 255)]
+            FSTEPS = 8                          # 페이드 인/아웃 각 단계
+            FDT = 0.5 / (2 * FSTEPS)            # 모터 1개당 ≈ 500ms
+            cycle = 0
             # 멈춤 버튼 누를 때까지 계속 반복
             while not cancel.is_set():
-                # ① 순차 점등: 그룹 하나씩 단일색으로 켜고 0.2초 → 다 끄고 다음
-                for name, grp in groups:
+                # ① 순차 점등: ID 순서로 한 모터씩 페이드 인→아웃(약 500ms).
+                #    한 사이클(18개) 돌면 다음 색으로.
+                cr, cg, cb = PALETTE[cycle % len(PALETTE)]
+                cycle += 1
+                for mid in SEQ_ORDER:
                     if cancel.is_set():
                         break
-                    robot.send_leds([(i, 0, 0, 0) for i in ids])       # 다 끄고
-                    robot.send_leds([(j,) + SEQ_COLOR for j in grp])   # 그룹 켜기
-                    self._ui(lambda name=name: self.led_test_status.config(
-                        text=f"① 순차 점등  {name}", fg="#1565c0"))
-                    if cancel.wait(0.2):
-                        break
-                robot.send_leds([(i, 0, 0, 0) for i in ids])           # 마지막 끄기
+                    self._ui(lambda m=mid: self.led_test_status.config(
+                        text=f"① 순차 점등  ID {m}", fg="#1565c0"))
+                    # 페이드 인 (어둡→밝)
+                    for s in range(1, FSTEPS + 1):
+                        if cancel.is_set():
+                            break
+                        f = s / FSTEPS
+                        robot.send_leds([(mid, int(cr * f), int(cg * f),
+                                          int(cb * f))])
+                        if cancel.wait(FDT):
+                            break
+                    # 페이드 아웃 (밝→어둡)
+                    for s in range(FSTEPS, -1, -1):
+                        if cancel.is_set():
+                            break
+                        f = s / FSTEPS
+                        robot.send_leds([(mid, int(cr * f), int(cg * f),
+                                          int(cb * f))])
+                        if cancel.wait(FDT):
+                            break
                 if cancel.is_set():
                     break
 
