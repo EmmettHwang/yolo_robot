@@ -32,6 +32,11 @@ mutagen>=1.47           # mp3 메타정보(제목/아티스트/길이) 읽기
 pymupdf>=1.27           # 매뉴얼 PDF 뷰어(렌더링/목차)
 pywebview>=5.0          # 로고 클릭 시 웹뷰(kdt2025.com) 모달 (Windows: Edge WebView2)
 
+# --- (선택) 음성 대화: 마이크→LLM→스피커 ---
+SpeechRecognition>=3.10  # 음성 인식(Google Web Speech, 키 불필요)
+# + 로컬 LLM은 Ollama 별도 설치 필요: https://ollama.com  (예: ollama pull llama3.2)
+#   STT는 인터넷 필요, TTS는 pyttsx3(위) 사용
+
 # --- (선택) 카메라 실제 이름 표시 (Windows) ---
 # pygrabber
 
