@@ -320,6 +320,7 @@ class PortSelector:
         self._led_cancel = threading.Event()
         self._pending_motion = None      # LED 중 동작 테스트로 끼워 보낼 모션
         self._pending_power = None        # LED 중 전원 켜기/끄기 예약(True/False)
+        self.led_motion_var = None        # 'LED 중 이 동작 함께' 체크 변수
         self.led_test_btn = None
         self.led_test_status = None
         self._motormap_img = None
@@ -521,6 +522,11 @@ class PortSelector:
             mrow, width=22, values=[motion_label(n) for n in ALL_MOTIONS])
         self.motion_combo.set(motion_label(1))      # 기본: 1번(기본 자세)
         self.motion_combo.pack(side="left", padx=(6, 0))
+        # 체크 시: LED 테스트가 도는 동안 위 모션을 사이클마다 함께 실행
+        self.led_motion_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(mrow, text="LED 중 이 동작 함께",
+                       variable=self.led_motion_var,
+                       font=("Malgun Gothic", 8)).pack(side="left", padx=(6, 0))
 
         brow = tk.Frame(ctrl); brow.pack(anchor="w")
         self.motion_test_btn = ttk.Button(
@@ -940,6 +946,15 @@ class PortSelector:
                 #    18개 다 켜지면 200ms 간격으로 3회 깜빡. 한 사이클마다 색 변경.
                 cr, cg, cb = PALETTE[cycle % len(PALETTE)]
                 cycle += 1
+                # 체크 시: 이번 사이클에 선택 모션을 함께 실행
+                if self.led_motion_var is not None and self.led_motion_var.get():
+                    try:
+                        msel = self._selected_motion()
+                        robot.send_motion(msel)
+                        self._ui(lambda m=msel: self.led_test_status.config(
+                            text=f"① 모션 {m} 함께 실행 + 순차 점등", fg="#6a1b9a"))
+                    except Exception:
+                        pass
                 for mid in SEQ_ORDER:
                     if cancel.is_set():
                         break
