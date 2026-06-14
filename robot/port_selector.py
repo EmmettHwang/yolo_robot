@@ -869,6 +869,10 @@ class PortSelector:
         try:
             from robot_controller import HumanoidRobot
             from motion_table import SAFE_SIT, SAFE_UP, POWER_OFF_HOLD
+            try:
+                import sound
+            except Exception:
+                sound = None
             robot = HumanoidRobot(port, self.baudrate)
             robot.connect()
             if not robot.is_connected:
@@ -876,14 +880,18 @@ class PortSelector:
                     text=f"✗ {port} 를 열지 못했습니다.", fg="#c62828"))
                 return
             if on:
+                if sound:
+                    sound.player.play_effect(sound.FX_POWER_ON)   # 전원 ON 효과음
                 robot.power(True)                     # 전원(토크) ON
                 self._ui(lambda: self.motion_test_status.config(
                     text="🔌 전원 ON → 일어서는 중...", fg="#1565c0"))
-                time.sleep(0.3)
+                time.sleep(0.5)                       # 토크 안정 대기(0.5초)
                 robot.send_motion(SAFE_UP)            # 61 일어서기
                 self._ui(lambda: self.motion_test_status.config(
                     text="🔌 전원 켜짐 (일어서기 완료)", fg="#2e7d32"))
             else:
+                if sound:
+                    sound.player.play_effect(sound.FX_POWER_OFF)  # 전원 OFF 효과음
                 robot.send_motion(SAFE_SIT)           # 60 앉기
                 self._ui(lambda h=POWER_OFF_HOLD: self.motion_test_status.config(
                     text=f"⏻ 앉는 중... {h}초 뒤 전원 끔", fg="#1565c0"))
