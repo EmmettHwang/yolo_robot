@@ -27,7 +27,7 @@ import hangul
 import yolo as yolo_mod
 import sound as snd
 import object_actions
-from motion_table import coco_kr
+from motion_table import coco_kr, motion_name
 from paths import CONFIG_INI, DATA_DIR, ACTIVE_ONNX
 from robot_controller import HumanoidRobot
 from motion import MotionRunner
@@ -273,6 +273,33 @@ class RecognitionView(ttk.Frame):
 
         self._set_manual_enabled(not self.yolo_on)   # YOLO ON이면 수동 비활성
 
+        # 반응 로그 (화면 밑)
+        logf = tk.Frame(self); logf.pack(fill="x", padx=6, pady=(0, 6))
+        tk.Label(logf, text="반응 로그", font=("Malgun Gothic", 9, "bold")).pack(
+            anchor="w")
+        self.log_text = tk.Text(logf, height=6, bg="#1e1e1e", fg="#d4d4d4",
+                                font=("Consolas", 9), wrap="word")
+        self.log_text.pack(fill="x")
+        self.log_text.configure(state="disabled")
+
+    def _log(self, msg):
+        """반응 로그 박스에 한 줄 추가(스레드 안전)."""
+        def apply():
+            try:
+                self.log_text.configure(state="normal")
+                self.log_text.insert("end", msg + "\n")
+                # 최근 200줄만 유지
+                if int(self.log_text.index("end-1c").split(".")[0]) > 200:
+                    self.log_text.delete("1.0", "2.0")
+                self.log_text.see("end")
+                self.log_text.configure(state="disabled")
+            except Exception:
+                pass
+        try:
+            self.after(0, apply)
+        except Exception:
+            pass
+
     # ============================================================
     # 시작 / 정지
     # ============================================================
@@ -377,6 +404,18 @@ class RecognitionView(ttk.Frame):
         self._cleanup()
         self.start_btn.config(text="▶ 연결 & 시작", bg="#28a745")
         self.lbl_conn.config(text="연결: 정지됨")
+        # 멈춘 화면(마지막 프레임) 대신 '정지됨' 안내 표시
+        try:
+            self.canvas.itemconfig(self.img_id, image="")
+            self.canvas.delete("hint")
+            cw = max(self.canvas.winfo_width(), 320)
+            ch = max(self.canvas.winfo_height(), 240)
+            self.canvas.create_text(
+                cw // 2, ch // 2, tags="hint", fill="#888",
+                font=("Malgun Gothic", 12),
+                text="■ 정지됨 — ‘▶ 연결 & 시작’을 누르세요")
+        except Exception:
+            pass
 
     def _cleanup(self):
         if self.runner is not None:
@@ -433,6 +472,28 @@ class RecognitionView(ttk.Frame):
             with self._lock:
                 self._frame = frame
 
+    def _log_sequence(self, label, conf, seq):
+        """반응 시퀀스를 로그 박스에 표시."""
+        kr = coco_kr(label)
+        name = f"{label} ({kr})" if kr else label
+        self._log(f"[{_clock(time.time())}] 🎯 {name} {conf*100:.0f}% → 반응 "
+                  f"({len(seq)}단계)")
+        skinds = {snd.MP3: "MP3", snd.TTS: "TTS", snd.RANDOM: "랜덤음",
+                  snd.NONE: ""}
+        for i, st in enumerate(seq, 1):
+            m = st.get("motion")
+            mtxt = motion_name(int(m)) if m else "(모션 없음)"
+            kind = st.get("sound_kind", snd.NONE)
+            val = st.get("sound_value", "")
+            stxt = ""
+            if kind and kind != snd.NONE:
+                base = os.path.basename(val) if kind == snd.MP3 else val
+                stxt = f" · {skinds.get(kind, kind)}" + (f" '{base}'" if base
+                                                         else "")
+            hold = st.get("hold")
+            htxt = f" · {hold:.0f}초" if hold else ""
+            self._log(f"   {i}. {mtxt}{stxt}{htxt}")
+
     def _resolve_hold(self, st):
         """스텝 지속시간: 지정값(초) > mp3 길이 > 기본(None=러너 기본)."""
         d = st.get("duration")
@@ -478,6 +539,7 @@ class RecognitionView(ttk.Frame):
                 # 서브 동작 시퀀스 실행(LED+모션+사운드, 동작중지로 취소 가능)
                 if seq and self.runner:
                     self.runner.action_sequence(seq, sound_on=self.sound_on)
+                    self._log_sequence(top_label, top_conf, seq)
                 self._last_acted = top_label
                 self._last_trigger = now
 
@@ -709,6 +771,22 @@ class RecognitionView(ttk.Frame):
         kind = entry.get("sound_kind", snd.NONE)
         if self.sound_on and kind and kind != snd.NONE:
             self.player.play(kind, entry.get("sound_value", ""))
+
+    def on_show(self):
+        """④ 자율활동 탭에 들어올 때: 최신 반응 매핑 반영 + 렌더 루프 재가동."""
+        try:
+            self.reload_mapping()          # 인식및반응설정 변경 즉시 반영
+        except Exception:
+            pass
+        if self.running:
+            # 렌더 루프가 멈춰 있을 수 있으니 확실히 재가동(중복 방지로 취소 후 시작)
+            if self._after_id is not None:
+                try:
+                    self.after_cancel(self._after_id)
+                except Exception:
+                    pass
+                self._after_id = None
+            self._schedule_render()
 
     def on_close(self):
         if self.running:

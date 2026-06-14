@@ -508,6 +508,11 @@ class App:
         if current is self.tab_train:
             self._load_model_async()
         elif current is self.rec_view:
+            # 매핑 반영 + 렌더 루프 재가동(멈춤 방지)
+            try:
+                self.rec_view.on_show()
+            except Exception:
+                pass
             # 인식 탭에 오면 자동 시작 (체크박스로 on/off)
             if (not self.rec_view.running
                     and self.rec_view.auto_start.get()):
