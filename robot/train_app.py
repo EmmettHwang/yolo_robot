@@ -24,7 +24,8 @@ import cv2
 import gradio as gr
 
 from paths import (IMG_DIR, LBL_DIR, MODELS_DIR, BASE_WEIGHTS, DATA_YAML,
-                   RUNS_DIR, BEST_WEIGHTS, ACTIVE_ONNX, ACTIVE_CLASSES)
+                   RUNS_DIR, BEST_WEIGHTS, ACTIVE_ONNX, ACTIVE_CLASSES,
+                   AI_LECTURE_DIR)
 from trainer import (load_classes, save_classes, list_images, count_images,
                      next_index, delete_class, build_data_yaml, _imwrite,
                      read_results_metrics, RESULTS_PNG, _fmt_dur, SIZES)
@@ -248,6 +249,47 @@ def export_apply(name, progress=gr.Progress()):
 
 
 # ============================================================
+# 📖 인공지능 공부하기 (assets/ai_lecture 의 PDF 자료)
+# ============================================================
+def _lecture_names():
+    import glob
+    try:
+        return [os.path.basename(p)
+                for p in sorted(glob.glob(os.path.join(AI_LECTURE_DIR,
+                                                       "*.pdf")))]
+    except Exception:
+        return []
+
+
+def study_open(name, progress=gr.Progress()):
+    """선택한 PDF의 각 페이지를 이미지로 렌더링해 갤러리(스크롤)로 보여 준다."""
+    if not name:
+        return []
+    path = os.path.join(AI_LECTURE_DIR, name)
+    if not os.path.exists(path):
+        return []
+    try:
+        import fitz
+    except Exception:
+        return []
+    stem = os.path.splitext(name)[0]
+    out_dir = os.path.join(AI_LECTURE_DIR, "_pages", stem)
+    os.makedirs(out_dir, exist_ok=True)
+    doc = fitz.open(path)
+    imgs = []
+    n = doc.page_count
+    for i in range(n):
+        progress((i + 1) / max(1, n), desc=f"{i + 1}/{n}쪽 준비 중...")
+        out = os.path.join(out_dir, f"p{i:03d}.png")
+        if not os.path.exists(out):
+            pix = doc[i].get_pixmap(matrix=fitz.Matrix(1.6, 1.6))
+            pix.save(out)
+        imgs.append(out)
+    doc.close()
+    return imgs
+
+
+# ============================================================
 # UI
 # ============================================================
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -326,6 +368,18 @@ def build():
                 dl_pt = gr.DownloadButton("⬇ 학습 가중치 (.pt)",
                                           size="lg", visible=False)
 
+        with gr.Tab("📖 인공지능 공부하기"):
+            gr.Markdown("학습이 도는 동안 **인공지능 자료**를 읽어 보세요. "
+                        "(`assets/ai_lecture` 폴더의 PDF — 자료를 추가하면 ↻ 목록)")
+            with gr.Row():
+                study_dd = gr.Dropdown(_lecture_names(), label="자료 선택 (PDF)",
+                                       scale=4)
+                study_btn = gr.Button("📖 열기", variant="primary", scale=1)
+                study_ref = gr.Button("↻ 목록", scale=1)
+            study_gallery = gr.Gallery(label="자료 보기 (아래로 스크롤)",
+                                       columns=1, height=760,
+                                       object_fit="contain")
+
         # ---------- 이벤트 ----------
         def _gate2():
             return gr.update(interactive=_have_data())
@@ -347,6 +401,10 @@ def build():
             _gate3, None, tab3)
         exp_btn.click(export_apply, name_in,
                       [exp_status, dl_all, dl_onnx, dl_names, dl_pt])
+        study_btn.click(study_open, study_dd, study_gallery)
+        study_dd.change(study_open, study_dd, study_gallery)
+        study_ref.click(lambda: gr.update(choices=_lecture_names()), None,
+                        study_dd)
 
         # 앱 로드 시 초기화(클래스 보기/카운트 + 탭 잠금 상태)
         demo.load(init_view, None, [cls_dd, gallery, counts])

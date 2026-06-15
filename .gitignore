@@ -18,6 +18,9 @@ runs/
 # 인식및반응 프로젝트 저장 폴더(사용자 데이터)
 projects/
 
+# 학습 자료 PDF 렌더 캐시(학습센터에서 자동 생성)
+assets/ai_lecture/_pages/
+
 # Editor / OS
 .vscode/
 .DS_Store

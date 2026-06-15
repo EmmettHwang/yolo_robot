@@ -27,7 +27,7 @@ import serial.tools.list_ports as list_ports
 from PIL import Image, ImageTk, ImageDraw
 
 from paths import (BASE, ROBOT_DIR, CONFIG_INI, LOGO_PATH, ACTIVE_ONNX,
-                   DATA_DIR, MODELS_DIR, AI_LECTURE_DIR, ensure_dirs)
+                   DATA_DIR, MODELS_DIR, ensure_dirs)
 from version import __version__
 from motion_table import COCO_CLASSES, coco_kr
 import trainer
@@ -175,7 +175,6 @@ class App:
         self._train_before_mtime = 0
         self._web_proc = None
         self._base_proc = None        # 기본 모델 가져오기 서브프로세스
-        self._study_win = None        # 인공지능 학습 자료 모달
         # 자동 진행 옵션 (체크박스)
         self.auto_dev = tk.BooleanVar(value=True)    # 설정 후 자동 이동
         self.auto_yolo = tk.BooleanVar(value=False)  # 모델 준비 후 자동 이동
@@ -426,110 +425,21 @@ class App:
             opened = webbrowser.open(url, new=2)   # 새 탭으로 열기
         except Exception:
             opened = False
+        self._train_before_mtime = self._get_active_mtime()
+        self._start_model_watch()
         if opened:
             self.model_status.config(
-                text=f"🌐 브라우저에서 로봇 인공지능 학습센터를 열었습니다 ({url}).\n"
-                     "학습 중에도 이 앱의 다른 탭을 자유롭게 쓰세요. "
-                     "새 모델을 내보내면 자동 반영됩니다(수동: ↻ 모델 새로고침).",
+                text=f"🌐 로봇 인공지능 학습센터를 브라우저에서 열었습니다 ({url}).",
                 fg="#1565c0")
+            messagebox.showinfo(
+                "로봇 인공지능 학습센터",
+                f"🌐 브라우저에서 학습센터를 열었습니다.\n{url}\n\n"
+                "• 학습이 도는 동안 이 앱의 다른 탭을 자유롭게 쓰세요.\n"
+                "• 학습 자료는 학습센터 안의 ‘📖 인공지능 공부하기’ 탭에서 볼 수 있어요.\n"
+                "• 새 모델을 내보내면 자동으로 반영됩니다(수동: ↻ 모델 새로고침).")
         else:
             self.model_status.config(
                 text=f"브라우저를 열지 못했습니다. 직접 접속하세요: {url}", fg="#c62828")
-        self._train_before_mtime = self._get_active_mtime()
-        self._start_model_watch()
-        self._show_ai_study(auto=True)   # 학습 동안 볼 학습 자료(있으면 자동 표시)
-
-    # ---------- 인공지능 학습 자료(assets/ai_lecture 의 PDF) ----------
-    def _lecture_pdfs(self):
-        import glob
-        try:
-            return sorted(glob.glob(os.path.join(AI_LECTURE_DIR, "*.pdf")))
-        except Exception:
-            return []
-
-    def _show_ai_study(self, auto=False):
-        """assets/ai_lecture 폴더의 PDF 학습 자료를 고르거나 바로 연다.
-
-        auto=True(학습센터 열 때 자동 호출)면 자료가 없을 때 조용히 넘어간다.
-        """
-        pdfs = self._lecture_pdfs()
-        if not pdfs:
-            if not auto:
-                if messagebox.askyesno(
-                        "학습 자료",
-                        "학습 자료(PDF)가 없습니다.\n"
-                        f"‘{AI_LECTURE_DIR}’ 폴더에 PDF를 넣어 주세요.\n\n"
-                        "폴더를 열까요?"):
-                    try:
-                        os.makedirs(AI_LECTURE_DIR, exist_ok=True)
-                        os.startfile(AI_LECTURE_DIR)
-                    except Exception:
-                        pass
-            return
-        if len(pdfs) == 1:
-            self._open_lecture_pdf(pdfs[0])
-        else:
-            self._pick_lecture_dialog(pdfs)
-
-    def _open_lecture_pdf(self, path):
-        try:
-            import pdf_viewer
-            pdf_viewer.open_pdf(self.root, path,
-                                title="📖 " + os.path.splitext(
-                                    os.path.basename(path))[0])
-        except Exception as e:
-            messagebox.showerror("PDF 열기 실패", str(e))
-
-    def _pick_lecture_dialog(self, pdfs):
-        dlg = tk.Toplevel(self.root)
-        dlg.title("📖 학습 자료 선택")
-        dlg.configure(bg="white")
-        dlg.transient(self.root)
-        dlg.resizable(False, False)
-        tk.Label(dlg, text="볼 학습 자료(PDF)를 고르세요",
-                 font=("Malgun Gothic", 12, "bold"), bg="white").pack(
-            padx=18, pady=(16, 8))
-        names = [os.path.basename(p) for p in pdfs]
-        lb = tk.Listbox(dlg, width=44, height=min(12, max(3, len(names))),
-                        font=("Malgun Gothic", 10), activestyle="none")
-        for n in names:
-            lb.insert("end", n)
-        lb.select_set(0)
-        lb.pack(padx=18)
-
-        def open_sel():
-            sel = lb.curselection()
-            if sel:
-                path = pdfs[sel[0]]
-                dlg.destroy()
-                self._open_lecture_pdf(path)
-            else:
-                dlg.destroy()
-        lb.bind("<Double-Button-1>", lambda e: open_sel())
-        btns = tk.Frame(dlg, bg="white"); btns.pack(pady=14)
-        tk.Button(btns, text="열기", bg="#28a745", fg="white", relief="flat",
-                  cursor="hand2", width=10, font=("Malgun Gothic", 10, "bold"),
-                  command=open_sel).pack(side="left", padx=6)
-        tk.Button(btns, text="📂 폴더 열기", cursor="hand2", width=12,
-                  command=lambda: (self._open_lecture_folder())).pack(
-            side="left", padx=6)
-        tk.Button(btns, text="취소", cursor="hand2", width=8,
-                  command=dlg.destroy).pack(side="left", padx=6)
-        dlg.update_idletasks()
-        try:
-            x = self.root.winfo_rootx() + 150
-            y = self.root.winfo_rooty() + 130
-            dlg.geometry(f"+{x}+{y}")
-            dlg.grab_set()
-        except Exception:
-            pass
-
-    def _open_lecture_folder(self):
-        try:
-            os.makedirs(AI_LECTURE_DIR, exist_ok=True)
-            os.startfile(AI_LECTURE_DIR)
-        except Exception:
-            pass
 
     def _start_model_watch(self):
         """active.onnx 변경(학습센터의 새 모델)을 주기적으로 감지해 자동 재로드."""
@@ -900,41 +810,33 @@ class App:
         self.coco_list.pack(side="left")
         self._set_class_list(list(COCO_CLASSES))
 
-        # 로봇 인공지능 학습센터(서버) 주소
-        urow = tk.Frame(f, bg=BG); urow.pack(pady=(4, 0))
-        tk.Label(urow, text="학습센터 주소:", font=("Malgun Gothic", 9),
-                 bg=BG, fg="#555").pack(side="left")
+        # 로봇 인공지능 학습센터(서버) 주소 — 어디로 접속할지 지정
+        urow = tk.Frame(f, bg=BG); urow.pack(pady=(6, 2))
+        tk.Label(urow, text="🌐 학습센터 주소(URL):",
+                 font=("Malgun Gothic", 10, "bold"), bg=BG, fg="#333").pack(
+            side="left")
         self.train_url_var = tk.StringVar(value=self._get_train_url())
-        tk.Entry(urow, textvariable=self.train_url_var, width=30).pack(
-            side="left", padx=(4, 4))
-        tk.Button(urow, text="주소 저장", bg="#6a1b9a", fg="white",
-                  relief="flat", cursor="hand2",
-                  font=("Malgun Gothic", 9, "bold"),
-                  command=self._save_train_url).pack(side="left", ipadx=4)
+        tk.Entry(urow, textvariable=self.train_url_var, width=30,
+                 font=("Consolas", 10)).pack(side="left", padx=(6, 4))
+        tk.Button(urow, text="저장", bg="#607d8b", fg="white", relief="flat",
+                  cursor="hand2", font=("Malgun Gothic", 9, "bold"),
+                  command=self._save_train_url).pack(side="left", ipadx=6)
 
-        btns = tk.Frame(f, bg=BG); btns.pack(pady=18)
-        tk.Button(btns, text="📥 모델 가져오기",
-                  font=("Malgun Gothic", 11, "bold"), bg="#00897b", fg="white",
-                  relief="flat", cursor="hand2", height=2, width=16,
-                  command=self._import_model).pack(side="left", padx=6)
-        tk.Button(btns, text="🌐 로봇 인공지능 학습센터 열기",
-                  font=("Malgun Gothic", 11, "bold"), bg="#6a1b9a", fg="white",
-                  relief="flat", cursor="hand2", height=2, width=24,
-                  command=self._open_train_web).pack(side="left", padx=6)
-        tk.Button(btns, text="↻ 모델 새로고침",
-                  font=("Malgun Gothic", 10), cursor="hand2", height=2,
-                  width=13, command=self._reload_model).pack(side="left",
-                                                             padx=6)
-        tk.Button(btns, text="📖 학습 자료",
-                  font=("Malgun Gothic", 10), cursor="hand2", height=2,
-                  width=11, command=self._show_ai_study).pack(side="left",
-                                                              padx=6)
+        # 하단 버튼 — 색/크기 통일(도구=파랑 동일 폭, 진행=초록)
+        btns = tk.Frame(f, bg=BG); btns.pack(pady=16)
+        _BTN = dict(font=("Malgun Gothic", 11, "bold"), relief="flat",
+                    cursor="hand2", height=2, width=16, fg="white")
+        tk.Button(btns, text="🌐 학습센터 열기", bg=ACCENT,
+                  command=self._open_train_web, **_BTN).pack(side="left", padx=5)
+        tk.Button(btns, text="📥 모델 가져오기", bg=ACCENT,
+                  command=self._import_model, **_BTN).pack(side="left", padx=5)
+        tk.Button(btns, text="↻ 모델 새로고침", bg=ACCENT,
+                  command=self._reload_model, **_BTN).pack(side="left", padx=5)
         self.train_next = tk.Button(
-            btns, text="다음 → 자율활동시작 ▶", font=("Malgun Gothic", 11, "bold"),
-            bg="#9e9e9e", fg="white", relief="flat", height=2, width=18,
-            state="disabled",
-            command=lambda: self.nb.select(self.rec_view))
-        self.train_next.pack(side="left", padx=6)
+            btns, text="다음 → 자율활동시작 ▶", bg="#9e9e9e",
+            state="disabled", command=lambda: self.nb.select(self.rec_view),
+            **{**_BTN, "width": 18})
+        self.train_next.pack(side="left", padx=5)
 
         tk.Checkbutton(f, text="모델 준비되면 자동으로 자율활동시작 단계로 이동",
                        variable=self.auto_yolo, bg=BG,
@@ -1353,7 +1255,7 @@ class App:
             self.coco_list.see(0)
         except Exception:
             pass
-        self.train_next.config(state="normal", bg=ACCENT)
+        self.train_next.config(state="normal", bg="#28a745")
         try:
             current = self.nb.nametowidget(self.nb.select())
         except Exception:
