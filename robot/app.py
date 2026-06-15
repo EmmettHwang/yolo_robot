@@ -27,7 +27,7 @@ import serial.tools.list_ports as list_ports
 from PIL import Image, ImageTk, ImageDraw
 
 from paths import (BASE, ROBOT_DIR, CONFIG_INI, LOGO_PATH, ACTIVE_ONNX,
-                   DATA_DIR, ensure_dirs)
+                   DATA_DIR, MODELS_DIR, ensure_dirs)
 from version import __version__
 from motion_table import COCO_CLASSES, coco_kr
 import trainer
