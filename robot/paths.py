@@ -39,6 +39,7 @@ CONFIG_INI = os.path.join(BASE, "config.ini")
 DATA_DIR = os.path.join(BASE, "data")
 OBJECT_ACTIONS_JSON = os.path.join(DATA_DIR, "object_actions.json")
 MOTION_GRID_JSON = os.path.join(DATA_DIR, "motion_grid.json")
+PROJECTS_DIR = os.path.join(BASE, "projects")   # 인식및반응 프로젝트 저장 폴더
 
 # 학습 / 모델
 DATASET = os.path.join(BASE, "dataset")

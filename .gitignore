@@ -15,6 +15,9 @@ models/
 dataset/
 runs/
 
+# 인식및반응 프로젝트 저장 폴더(사용자 데이터)
+projects/
+
 # Editor / OS
 .vscode/
 .DS_Store

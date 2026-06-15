@@ -289,6 +289,18 @@ class ActionEditor(ttk.Frame):
             self._add_group(obj, steps_of(act))
         self._refresh_add_combo()
 
+    def reload(self):
+        """JSON을 다시 읽어 표 전체를 재구성(다른 탭에서 바꾼 내용 반영)."""
+        for g in list(self.groups):
+            try:
+                g["frame"].destroy()
+            except Exception:
+                pass
+        self.groups = []
+        self.mp3_items = mp3_library.list_mp3()
+        self.mapping = load_actions()
+        self._load_existing()
+
     def _add_selected(self):
         disp = self.add_var.get().strip()
         obj = self._disp_to_name.get(disp, disp)

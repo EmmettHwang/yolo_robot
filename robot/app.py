@@ -21,7 +21,7 @@ import configparser
 import subprocess
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog, simpledialog, messagebox
 
 import serial.tools.list_ports as list_ports
 from PIL import Image, ImageTk
@@ -33,7 +33,9 @@ from motion_table import COCO_CLASSES, coco_kr
 import trainer
 import yolo as yolo_mod
 from object_actions import ActionEditor
+from block_editor import BlockEditor
 from recognition_view import RecognitionView
+import project
 
 PY = sys.executable
 WIN_STATE = os.path.join(DATA_DIR, "window.json")   # 메인 윈도 위치/크기 기억
@@ -127,9 +129,118 @@ class App:
         self.nb.add(self.rec_view, text="  ④  ▶ 자율활동시작  ")
         self.nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
+        self._cur_project = None                       # 현재 프로젝트 이름
+        self._build_menu()
+
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._apply_topmost()                          # 항상 위 적용
         self.root.after(400, self._start_flow)         # 시퀀스 시작
+
+    # ============================================================
+    # 프로젝트 메뉴 (인식및반응 설정을 폴더 단위로 저장/불러오기)
+    # ============================================================
+    def _build_menu(self):
+        mbar = tk.Menu(self.root)
+        pm = tk.Menu(mbar, tearoff=0)
+        pm.add_command(label="새 프로젝트(비우기)", command=self._project_new)
+        pm.add_separator()
+        pm.add_command(label="프로젝트 저장          Ctrl+S",
+                       command=self._project_save)
+        pm.add_command(label="다른 이름으로 저장…",
+                       command=self._project_save_as)
+        pm.add_command(label="프로젝트 불러오기…      Ctrl+O",
+                       command=self._project_open)
+        pm.add_separator()
+        pm.add_command(label="프로젝트 폴더 열기",
+                       command=self._project_open_folder)
+        mbar.add_cascade(label="📁 프로젝트", menu=pm)
+        self.root.config(menu=mbar)
+        self.root.bind_all("<Control-s>", lambda e: self._project_save())
+        self.root.bind_all("<Control-o>", lambda e: self._project_open())
+
+    def _refresh_all_action_tabs(self):
+        """3개 하위 탭 + 자율활동 매핑을 현재 JSON으로 동기화."""
+        for fn in (lambda: self.action_editor.reload(),
+                   lambda: self.block_view.reload(),
+                   self._refresh_python_code,
+                   lambda: self.rec_view.reload_mapping()):
+            try:
+                fn()
+            except Exception:
+                pass
+
+    def _flush_editors(self):
+        """편집 중인 내용을 JSON에 먼저 저장(저장 직전 호출)."""
+        try:
+            cur = self._act_sub.nametowidget(self._act_sub.select())
+            if cur is self._act_tab_table:
+                self.action_editor._autosave()
+        except Exception:
+            pass
+
+    def _set_project(self, name):
+        self._cur_project = name
+        base = f"YOLO 기반 휴머노이드  ROBO COMMANDER  v{__version__}"
+        self.root.title(base + (f"   —   [{name}]" if name else ""))
+
+    def _project_new(self):
+        if not messagebox.askyesno(
+                "새 프로젝트", "현재 인식및반응 설정을 모두 비웁니다. 계속할까요?"):
+            return
+        import object_actions
+        object_actions.save_actions({})
+        self._set_project(None)
+        self._refresh_all_action_tabs()
+
+    def _project_save(self):
+        if not self._cur_project:
+            return self._project_save_as()
+        self._flush_editors()
+        try:
+            folder = project.save_project(self._cur_project)
+            messagebox.showinfo("프로젝트 저장",
+                                f"‘{self._cur_project}’ 저장 완료\n{folder}")
+        except Exception as e:
+            messagebox.showerror("프로젝트 저장 실패", str(e))
+
+    def _project_save_as(self):
+        name = simpledialog.askstring(
+            "다른 이름으로 저장", "프로젝트 이름:",
+            initialvalue=self._cur_project or "내프로젝트", parent=self.root)
+        if not name:
+            return
+        self._flush_editors()
+        try:
+            folder = project.save_project(name)
+            self._set_project(name)
+            messagebox.showinfo("프로젝트 저장",
+                                f"‘{name}’ 저장 완료\n{folder}")
+        except Exception as e:
+            messagebox.showerror("프로젝트 저장 실패", str(e))
+
+    def _project_open(self):
+        folder = filedialog.askdirectory(
+            title="프로젝트 폴더 선택 (actions.json 이 든 폴더)",
+            initialdir=project.projects_root())
+        if not folder:
+            return
+        try:
+            mapping = project.load_project(folder)
+            project.apply_mapping(mapping)
+            self._set_project(os.path.basename(folder.rstrip("/\\")))
+            self._refresh_all_action_tabs()
+            self.nb.select(self.tab_act)
+            messagebox.showinfo(
+                "프로젝트 불러오기",
+                f"‘{self._cur_project}’ 불러오기 완료 ({len(mapping)}개 객체)")
+        except Exception as e:
+            messagebox.showerror("불러오기 실패", str(e))
+
+    def _project_open_folder(self):
+        try:
+            os.startfile(project.projects_root())
+        except Exception:
+            pass
 
     # ---------- 항상 위(맨 앞) ----------
     def _apply_topmost(self):
@@ -414,35 +525,37 @@ class App:
         sub = ttk.Notebook(f)
         sub.pack(fill="both", expand=True, padx=2, pady=2)
 
-        # ③-1  표 코딩 (기존 ActionEditor)
+        # ③-1  액션스크립터 (기존 ActionEditor 표)
         tab_table = ttk.Frame(sub)
         self.action_editor = ActionEditor(
             tab_table, class_names=trainer.load_classes())
         self.action_editor.pack(fill="both", expand=True)
-        sub.add(tab_table, text="  📋 표 코딩  ")
+        sub.add(tab_table, text="  📋 액션스크립터  ")
+        self._act_tab_table = tab_table
 
-        # ③-2  블록 코딩 (다음 단계에서 캔버스 드래그형으로 구현)
+        # ③-2  블록 코딩 (캔버스 드래그형)
         tab_block = ttk.Frame(sub)
-        tk.Label(tab_block,
-                 text="🧩 블록 코딩 (캔버스 드래그형) — 준비 중\n"
-                      "표 코딩과 같은 데이터를 블록으로 편집하게 됩니다.",
-                 font=("Malgun Gothic", 13, "bold"), fg="#888",
-                 justify="center").pack(expand=True)
+        self.block_view = BlockEditor(tab_block,
+                                      on_change=self._on_block_change)
+        self.block_view.pack(fill="both", expand=True)
         sub.add(tab_block, text="  🧩 블록 코딩  ")
+        self._act_tab_block = tab_block
 
-        # ③-3  파이썬 코드 (보기 전용, 탭 열 때 자동 생성)
+        # ③-3  AI 생성 파이썬 코드 (보기 전용, 탭 열 때 자동 생성)
         tab_py = ttk.Frame(sub)
         self._build_python_tab(tab_py)
-        sub.add(tab_py, text="  🐍 파이썬 코드  ")
+        sub.add(tab_py, text="  🐍 AI 생성 파이썬 코드  ")
 
         self._act_sub = sub
         self._act_tab_py = tab_py
+        self._act_prev = tab_table
         sub.bind("<<NotebookTabChanged>>", self._on_act_sub_changed)
         return f
 
     def _build_python_tab(self, parent):
         bar = tk.Frame(parent, bg=BG); bar.pack(fill="x", padx=8, pady=(8, 0))
-        tk.Label(bar, text="🐍 생성된 파이썬 코드  (보기 전용 · 표/블록을 바꾸면 자동 갱신)",
+        tk.Label(bar,
+                 text="🐍 AI 생성 파이썬 코드  (보기 전용 · 액션스크립터/블록을 바꾸면 자동 갱신)",
                  font=("Malgun Gothic", 11, "bold"), bg=BG).pack(side="left")
         tk.Button(bar, text="📋 복사", cursor="hand2", relief="flat",
                   bg="#607d8b", fg="white",
@@ -488,18 +601,40 @@ class App:
         except Exception:
             pass
 
+    def _on_block_change(self):
+        # 블록 편집 → 파이썬 코드 즉시 갱신(보이는 중이면)
+        try:
+            self._refresh_python_code()
+        except Exception:
+            pass
+
     def _on_act_sub_changed(self, _evt):
         try:
             cur = self._act_sub.nametowidget(self._act_sub.select())
         except Exception:
             return
-        if cur is self._act_tab_py:
-            # 표/블록의 최신 편집을 파일로 저장 후 코드 재생성(단일 데이터 소스)
+        prev = getattr(self, "_act_prev", None)
+        # 떠나는 탭이 액션스크립터면 위젯 내용을 먼저 저장(JSON이 최신이 되도록).
+        # 블록 편집기는 변경 즉시 저장하므로 따로 저장 불필요.
+        if prev is self._act_tab_table:
             try:
                 self.action_editor._autosave()
             except Exception:
                 pass
+        # 들어온 탭을 JSON에서 다시 읽어 동기화(단일 데이터 소스)
+        if cur is self._act_tab_table:
+            try:
+                self.action_editor.reload()
+            except Exception:
+                pass
+        elif cur is self._act_tab_block:
+            try:
+                self.block_view.reload()
+            except Exception:
+                pass
+        elif cur is self._act_tab_py:
             self._refresh_python_code()
+        self._act_prev = cur
 
     # ============================================================
     # 시퀀스 흐름
