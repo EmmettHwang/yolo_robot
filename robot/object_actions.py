@@ -300,6 +300,15 @@ class ActionEditor(ttk.Frame):
         self._refresh_add_combo()
         self._autosave()
 
+    # ---------- 표 컬럼 정렬 ----------
+    # (minsize px, weight) — 헤더와 모든 스텝 행이 같은 grid 컬럼을 써서 칸을 맞춘다.
+    # 0 모션 · 1 사운드 · 2 값 · 3 지속 · 4 반복 · 5 조건 · 6 순서/삭제
+    _COLS = [(200, 0), (100, 0), (212, 1), (80, 0), (74, 0), (150, 0), (100, 0)]
+
+    def _config_cols(self, frame):
+        for i, (mn, wt) in enumerate(self._COLS):
+            frame.grid_columnconfigure(i, minsize=mn, weight=wt)
+
     # ---------- 객체 그룹(카드) ----------
     def _add_group(self, obj, steps_data):
         card = tk.Frame(self.body, bd=1, relief="solid", bg="#fbfcff")
@@ -320,14 +329,14 @@ class ActionEditor(ttk.Frame):
             command=lambda g=group: self._add_step(g))
         group["add_btn"].pack(side="right")
 
-        # 컬럼 헤더
+        # 컬럼 헤더 — 스텝 행과 동일한 grid 컬럼을 사용해 칸을 맞춘다.
         ch = tk.Frame(card, bg="#fbfcff"); ch.pack(fill="x", padx=8)
-        for txt, w in (("모션", 22), ("사운드", 9),
-                       ("값 (mp3 / 읽을 말)", 24), ("지속", 6),
-                       ("🔁반복", 6), ("❓조건", 13)):
-            tk.Label(ch, text=txt, width=w, anchor="w", bg="#fbfcff",
-                     font=("Malgun Gothic", 8, "bold"), fg="#888").pack(
-                side="left")
+        self._config_cols(ch)
+        for col, txt in enumerate(("모션", "사운드", "값 (mp3 / 읽을 말)",
+                                   "지속", "🔁 반복", "❓ 조건", "순서 · 삭제")):
+            tk.Label(ch, text=txt, anchor="w", bg="#fbfcff",
+                     font=("Malgun Gothic", 8, "bold"), fg="#888").grid(
+                row=0, column=col, sticky="w", padx=(0, 4), pady=(0, 1))
 
         group["steps_frame"] = tk.Frame(card, bg="#fbfcff")
         group["steps_frame"].pack(fill="x", padx=8, pady=(0, 6))
@@ -363,35 +372,40 @@ class ActionEditor(ttk.Frame):
         data = data or {}
         fr = tk.Frame(group["steps_frame"], bg="#fbfcff")
         fr.pack(fill="x", pady=1)
+        self._config_cols(fr)
         step = {"frame": fr}
 
+        # col0 모션
         mv = tk.StringVar()
         m = data.get("motion")
         mv.set(motion_label(int(m)) if m else NONE_MOTION)
         step["motion_var"] = mv
         mc = ttk.Combobox(fr, textvariable=mv, state="readonly", width=22,
                           values=self._motion_values)
-        mc.pack(side="left")
+        mc.grid(row=0, column=0, sticky="w", padx=(0, 4))
         mc.bind("<<ComboboxSelected>>", lambda e: self._autosave())
         step["motion_combo"] = mc
 
+        # col1 사운드
         sv = tk.StringVar(value=data.get("sound_kind", snd.NONE))
         step["sound_var"] = sv
         sc = ttk.Combobox(fr, textvariable=sv, state="readonly", width=9,
                           values=[k for k, _ in snd.KINDS])
-        sc.pack(side="left", padx=(4, 0))
+        sc.grid(row=0, column=1, sticky="w", padx=(0, 4))
         sc.bind("<<ComboboxSelected>>",
                 lambda e, s=step: (self._rebuild_value(s), self._autosave()))
         step["sound_combo"] = sc
 
+        # col2 값 (mp3/읽을 말/랜덤/없음) — 내용은 _rebuild_value 가 채움
         step["val_holder"] = tk.Frame(fr, bg="#fbfcff")
-        step["val_holder"].pack(side="left", padx=(4, 0))
+        step["val_holder"].grid(row=0, column=2, sticky="w", padx=(0, 4))
         step["val_var"] = tk.StringVar(value=data.get("sound_value", ""))
 
+        # col3 지속(초)
         dur = data.get("duration")
         dv = tk.StringVar(value=(str(dur) if dur else ""))
-        durwrap = tk.Frame(fr, bg="#fbfcff"); durwrap.pack(side="left",
-                                                           padx=(8, 0))
+        durwrap = tk.Frame(fr, bg="#fbfcff")
+        durwrap.grid(row=0, column=3, sticky="w")
         de = tk.Entry(durwrap, textvariable=dv, width=4)
         de.pack(side="left")
         tk.Label(durwrap, text="초", font=("Malgun Gothic", 9), fg="#666",
@@ -399,33 +413,38 @@ class ActionEditor(ttk.Frame):
         de.bind("<FocusOut>", lambda e: self._autosave())
         step["dur_var"] = dv
 
-        # 🔁 반복 횟수
-        repwrap = tk.Frame(fr, bg="#fbfcff"); repwrap.pack(side="left",
-                                                           padx=(8, 0))
+        # col4 🔁 반복 횟수
+        repwrap = tk.Frame(fr, bg="#fbfcff")
+        repwrap.grid(row=0, column=4, sticky="w")
         tk.Label(repwrap, text="🔁", bg="#fbfcff").pack(side="left")
         rv = tk.IntVar(value=int(data.get("repeat", 1) or 1))
         tk.Spinbox(repwrap, from_=1, to=10, width=2, textvariable=rv,
                    command=self._autosave).pack(side="left")
         step["repeat_var"] = rv
 
-        # ❓ 만약(조건)
-        tk.Label(fr, text="❓", bg="#fbfcff").pack(side="left", padx=(8, 0))
+        # col5 ❓ 만약(조건)
+        condwrap = tk.Frame(fr, bg="#fbfcff")
+        condwrap.grid(row=0, column=5, sticky="w")
+        tk.Label(condwrap, text="❓", bg="#fbfcff").pack(side="left")
         cvar = tk.StringVar(value=COND_KEY2LABEL.get(
             data.get("cond", "always"), "항상"))
-        cc = ttk.Combobox(fr, textvariable=cvar, state="readonly", width=11,
-                          values=[lb for _, lb in CONDITIONS])
+        cc = ttk.Combobox(condwrap, textvariable=cvar, state="readonly",
+                          width=11, values=[lb for _, lb in CONDITIONS])
         cc.pack(side="left")
         cc.bind("<<ComboboxSelected>>", lambda e: self._autosave())
         step["cond_var"] = cvar
 
-        # 순서 이동 ▲/▼
-        tk.Button(fr, text="▲", width=2, cursor="hand2", relief="flat",
+        # col6 순서 이동 ▲/▼ · 삭제 ✕
+        ctrl = tk.Frame(fr, bg="#fbfcff")
+        ctrl.grid(row=0, column=6, sticky="w")
+        tk.Button(ctrl, text="▲", width=2, cursor="hand2", relief="flat",
                   command=lambda g=group, s=step: self._move_step(g, s, -1)
-                  ).pack(side="left", padx=(6, 0))
-        tk.Button(fr, text="▼", width=2, cursor="hand2", relief="flat",
-                  command=lambda g=group, s=step: self._move_step(g, s, 1)
                   ).pack(side="left")
-        tk.Button(fr, text="✕", width=2, cursor="hand2", relief="flat",
+        tk.Button(ctrl, text="▼", width=2, cursor="hand2", relief="flat",
+                  command=lambda g=group, s=step: self._move_step(g, s, 1)
+                  ).pack(side="left", padx=(2, 0))
+        tk.Button(ctrl, text="✕", width=2, cursor="hand2", relief="flat",
+                  fg="#c62828",
                   command=lambda g=group, s=step: self._del_step(g, s)).pack(
             side="left", padx=(6, 0))
 

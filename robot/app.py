@@ -110,6 +110,8 @@ class App:
         # 자동 진행 옵션 (체크박스)
         self.auto_dev = tk.BooleanVar(value=True)    # 설정 후 자동 이동
         self.auto_yolo = tk.BooleanVar(value=False)  # 모델 준비 후 자동 이동
+        # 항상 위(코딩하면서 카메라를 볼 수 있게) — 기본 ON
+        self.always_top = tk.BooleanVar(value=True)
 
         self._header()
 
@@ -126,7 +128,22 @@ class App:
         self.nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.root.after(400, self._start_flow)        # 시퀀스 시작
+        self._apply_topmost()                          # 항상 위 적용
+        self.root.after(400, self._start_flow)         # 시퀀스 시작
+
+    # ---------- 항상 위(맨 앞) ----------
+    def _apply_topmost(self):
+        try:
+            self.root.attributes("-topmost", bool(self.always_top.get()))
+        except Exception:
+            pass
+
+    def _suspend_topmost(self):
+        """자식/하위 프로세스 창(설정·웹뷰 등)이 가려지지 않도록 잠시 해제."""
+        try:
+            self.root.attributes("-topmost", False)
+        except Exception:
+            pass
 
     def _get_active_mtime(self):
         try:
@@ -167,6 +184,7 @@ class App:
         except Exception:
             pass
         self._train_before_mtime = self._get_active_mtime()
+        self._suspend_topmost()
         self._train_proc = subprocess.Popen(
             [PY, os.path.join(ROBOT_DIR, "webview_window.py"),
              url, "학습 웹앱"], cwd=BASE, env=self._child_env())
@@ -189,6 +207,7 @@ class App:
         except Exception:
             pass
         self._train_before_mtime = self._get_active_mtime()
+        self._suspend_topmost()
         self._train_proc = subprocess.Popen(
             [PY, os.path.join(ROBOT_DIR, "trainer.py")], cwd=BASE,
             env=self._child_env())
@@ -206,6 +225,7 @@ class App:
             return
         # 트레이너가 닫힘(뒤로) → 잠금 해제 후, active 모델이 바뀌었으면 다시 로드
         self._hide_wait_dialog()
+        self._apply_topmost()
         if self._get_active_mtime() != self._train_before_mtime:
             self.model_status.config(text="🔄 모델 변경 감지 — 다시 로드합니다...",
                                      fg="#ef6c00")
@@ -227,6 +247,7 @@ class App:
         """로고 클릭 → kdt2025.com 을 웹뷰(별도 프로세스)로 열고 메인 윈도 잠금."""
         if self._web_proc is not None and self._web_proc.poll() is None:
             return
+        self._suspend_topmost()
         self._web_proc = subprocess.Popen(
             [PY, os.path.join(ROBOT_DIR, "webview_window.py"),
              "https://kdt2025.com", "KDT 2025"], cwd=BASE,
@@ -244,6 +265,7 @@ class App:
             self.root.after(500, self._watch_web_proc)
             return
         self._hide_wait_dialog()
+        self._apply_topmost()
 
     def _style(self):
         st = ttk.Style()
@@ -287,6 +309,14 @@ class App:
                        fg="#ffd54f", bg=HEADER_BG, cursor="hand2")
         man.pack(side="right", padx=10)
         man.bind("<Button-1>", lambda e: self._show_pdf_manual())
+
+        tk.Checkbutton(
+            header, text="📌 항상 위", variable=self.always_top,
+            command=self._apply_topmost, font=("Malgun Gothic", 9, "bold"),
+            fg="#ffd54f", bg=HEADER_BG, selectcolor=HEADER_BG,
+            activebackground=HEADER_BG, activeforeground="#ffd54f",
+            highlightthickness=0, bd=0, cursor="hand2").pack(
+            side="right", padx=10)
 
     # ---------- 탭: 포트/장치 ----------
     def _tab_devices(self, nb):
@@ -409,6 +439,7 @@ class App:
             pass
         self.dev_status.config(text="🔧 장치 설정창에서 포트·카메라·마이크를 테스트하세요...",
                                fg="#ef6c00")
+        self._suspend_topmost()
         self._dev_proc = subprocess.Popen(
             [PY, os.path.join(ROBOT_DIR, "port_selector.py")], cwd=BASE,
             env=self._child_env())
@@ -466,6 +497,7 @@ class App:
             return
         # 설정창이 닫힘 → 잠금 해제, 재검증
         self._hide_wait_dialog()
+        self._apply_topmost()
         if self._check_devices():
             if self.auto_dev.get():
                 self.dev_status.config(
