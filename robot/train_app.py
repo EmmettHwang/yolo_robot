@@ -197,11 +197,14 @@ def _metrics_md(m):
 # ③ 적용 / 내보내기
 # ============================================================
 def export_apply(name, progress=gr.Progress()):
+    """제너레이터: 단계별 상태를 실시간으로 흘려보내고(진행바+안내), 끝나면
+    다운로드 버튼을 보이게 한다."""
     hide = gr.update(visible=False)
     progress(0.05, desc="확인 중...")
+    yield "⏳ 준비 중...", hide, hide, hide, hide
     if not os.path.exists(BEST_WEIGHTS):
-        return ("② 학습을 먼저 끝내세요(best.pt 없음).",
-                hide, hide, hide, hide)
+        yield ("② 학습을 먼저 끝내세요(best.pt 없음).", hide, hide, hide, hide)
+        return
     name = (name or "custom").strip()
     if not name.endswith(".pt"):
         name += ".pt"
@@ -209,11 +212,15 @@ def export_apply(name, progress=gr.Progress()):
     dst = os.path.join(MODELS_DIR, name)
     try:
         progress(0.2, desc="① 학습 가중치 복사 중...")
+        yield "⏳ ① 학습 가중치 복사 중...", hide, hide, hide, hide
         shutil.copy(BEST_WEIGHTS, dst)              # 학습 가중치 보관(best.pt 사본)
         progress(0.45, desc="② ONNX 변환 중... (수십 초 걸릴 수 있어요)")
+        yield ("⏳ ② ONNX 변환 중... (수십 초 걸릴 수 있어요)",
+               hide, hide, hide, hide)
         names = export_onnx.apply_pt_as_active(dst, label=name)   # → active.onnx
         # 3개 파일을 zip 하나로 묶기(일괄 다운로드용)
-        progress(0.8, desc="③ 파일 묶는 중 (ZIP)...")
+        progress(0.8, desc="③ 다운로드 파일 묶는 중 (ZIP)...")
+        yield "⏳ ③ 다운로드 파일 묶는 중 (ZIP)...", hide, hide, hide, hide
         bundle = os.path.join(MODELS_DIR, "robocommander_model.zip")
         with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as z:
             if os.path.exists(ACTIVE_ONNX):
@@ -224,20 +231,20 @@ def export_apply(name, progress=gr.Progress()):
                 z.write(dst, os.path.basename(dst))
         progress(1.0, desc="완료!")
     except Exception as e:
-        return f"✗ 변환 실패: {e}", hide, hide, hide, hide
+        yield f"✗ 변환 실패: {e}", hide, hide, hide, hide
+        return
     msg = (
         f"### ✅ 모델 완성 — {name} · 클래스 {len(names)}개\n"
-        "아래 **⬇ 모델 전체 한 번에 받기(ZIP)** 버튼으로 내려받으세요.\n\n"
-        "**📂 적용 방법**: 내려받은 `active.onnx` + `active.names` 를 "
-        "**로봇(인식) PC 의 `model/` 폴더**에 넣고, 인식 앱에서 "
-        "**■ 정지 → ▶ 연결 & 시작** 하면 새 모델이 적용됩니다. "
+        "**아래 ⬇ 모델 전체 한 번에 받기 (ZIP) 버튼**을 눌러 내려받으세요.\n\n"
+        "내려받은 `active.onnx` 와 `active.names` 를 **model 폴더**에 넣고, "
+        "인식 앱에서 **■ 정지 → ▶ 연결 & 시작** 하면 새 모델이 적용됩니다. "
         "(`.pt` 는 재학습용 보관 파일)"
     )
-    return (msg,
-            gr.update(value=bundle, visible=True),
-            gr.update(value=ACTIVE_ONNX, visible=True),
-            gr.update(value=ACTIVE_CLASSES, visible=True),
-            gr.update(value=dst, visible=True))
+    yield (msg,
+           gr.update(value=bundle, visible=True),
+           gr.update(value=ACTIVE_ONNX, visible=True),
+           gr.update(value=ACTIVE_CLASSES, visible=True),
+           gr.update(value=dst, visible=True))
 
 
 # ============================================================
