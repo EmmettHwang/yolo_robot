@@ -1,21 +1,30 @@
 # coding: utf-8
 """
-train_app.py  (gradio 브랜치, v4.x)
-===================================
-로컬 Gradio 학습 웹앱 — 런타임(인식) 앱과 분리된 학습 도구.
+webapp/train_app.py  (로봇 인공지능 학습센터)
+=============================================
+로컬 Gradio 학습 웹앱 — 런타임(인식) 앱과 분리된 별도 웹앱(webapp/ 폴더).
 
   ① 데이터 수집 : 브라우저 웹캠으로 캡처 → 클래스별 정사각 저장
   ② 학습        : ultralytics 학습(서브프로세스) + 실시간 로그 + 결과(mAP/그래프)
   ③ 적용/내보내기: best.pt → ONNX(active.onnx) 적용 + 다운로드(active.onnx/classes)
+  📖 인공지능 공부하기 : assets/ai_lecture 의 PDF 학습 자료 보기
 
 런타임 앱(OpenCV DNN)과의 계약: model/active.onnx + model/active.names
 
-실행:  python robot/train_app.py   →  http://127.0.0.1:7860
+실행:  python webapp/train_app.py   →  http://localhost:7860
+공용 모듈(paths/trainer/export_onnx)은 ../robot/ 에서 가져온다.
 무거운 의존성(torch/ultralytics)은 이 학습 도구에만 필요. 배포 exe엔 불필요.
 """
 
 import os
 import sys
+
+# 공용 모듈(paths, trainer, export_onnx)은 형제 폴더 robot/ 에 있다 → import 경로 추가
+_ROBOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                      "robot")
+if _ROBOT not in sys.path:
+    sys.path.insert(0, _ROBOT)
+
 import shutil
 import zipfile
 import subprocess
@@ -449,9 +458,18 @@ def build():
 if __name__ == "__main__":
     host = os.getenv("TRAIN_HOST", "127.0.0.1")
     port = int(os.getenv("TRAIN_PORT", "7860"))
-    local = host in ("127.0.0.1", "localhost")
-    print(f"[train_app] 서버 시작: http://{host}:{port}  "
-          f"(외부 접속은 http://<이 PC IP>:{port})")
-    # 수집 이미지(dataset/)·결과 그래프(runs/)를 갤러리에서 보여주려면 경로 허용 필요
-    build().launch(server_name=host, server_port=port, inbrowser=local,
+    # 바인딩 주소(host)가 0.0.0.0 이어도, 접속/클릭은 localhost 로 한다.
+    local_url = f"http://localhost:{port}"
+    loop_url = f"http://127.0.0.1:{port}"
+    print("=" * 56)
+    print("  🧠 로봇 인공지능 학습센터 서버 시작")
+    print(f"  ▶ 이 PC에서 열기(클릭):  {local_url}")
+    print(f"                           {loop_url}")
+    if host not in ("127.0.0.1", "localhost"):
+        print(f"  ▶ 다른 기기에서:        http://<이 PC IP>:{port}")
+    print("  (브라우저가 자동으로 열립니다. 창을 닫아도 서버는 계속 돕니다.)")
+    print("=" * 56)
+    # 수집 이미지(dataset/)·결과 그래프(runs/)를 갤러리에서 보여주려면 경로 허용 필요.
+    # inbrowser=True 로 자동으로 브라우저를 열어 바로 테스트할 수 있게 한다.
+    build().launch(server_name=host, server_port=port, inbrowser=True,
                    allowed_paths=[ROOT])

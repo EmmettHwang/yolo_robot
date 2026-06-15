@@ -64,8 +64,8 @@ ASSETS = os.path.join(BASE, "assets")
 SOUNDS_DIR = os.path.join(ASSETS, "sounds")   # (예약) 효과음 파일용
 MP3_DIR = os.path.join(ASSETS, "mp3")
 AI_LECTURE_DIR = os.path.join(ASSETS, "ai_lecture")   # 인공지능 학습 자료(PDF)
-# 이미지 → ./image, PDF/프로토콜 → ./protocol
-IMAGE_DIR = os.path.join(BASE, "image")
+# 이미지 → ./assets/image, PDF/프로토콜 → ./protocol
+IMAGE_DIR = os.path.join(ASSETS, "image")
 PROTOCOL_DIR = os.path.join(BASE, "protocol")
 LOGO_PATH = os.path.join(IMAGE_DIR, "logo.png")
 MOTORMAP_PATH = os.path.join(IMAGE_DIR, "motorMap.png")
