@@ -52,35 +52,55 @@ def _class_choices():
     return load_classes()
 
 
-def capture(img_rgb, cls, size):
-    """현재 카메라 프레임을 클래스에 저장. cls 가 기존 이름이면 그 사진에 이어서 추가."""
-    cls = (cls or "").strip()
-    if img_rgb is None:
-        # 실패해도 기존 갤러리는 그대로 둔다(지우지 않음)
-        return (gr.update(), gr.update(), gr.update(), gr.update())
-    if not cls:
-        return ("클래스 이름을 입력하거나, 기존 이름을 골라 주세요.",
-                gr.update(), gr.update(), gr.update())
+def _save_one(img_rgb, cls, size):
+    """프레임 1장을 클래스에 저장. (status, gallery_list 또는 None, classes) 반환.
+
+    cls 가 기존 이름이면 그 사진에 이어서 추가(next_index).
+    """
     classes = load_classes()
-    if cls not in classes:                       # 새 클래스면 추가, 기존이면 이어붙임
+    if cls not in classes:
         classes.append(cls)
         save_classes(classes)
     cls_id = classes.index(cls)
     os.makedirs(IMG_DIR, exist_ok=True)
     os.makedirs(LBL_DIR, exist_ok=True)
-    n = next_index(cls)                          # 기존 장수 다음 번호 → 이어서 추가
+    n = next_index(cls)
     stem = f"{cls}_{n:04d}"
-    size = int(size)
     bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
-    sq = cv2.resize(bgr, (size, size))
+    sq = cv2.resize(bgr, (int(size), int(size)))
     if not _imwrite(os.path.join(IMG_DIR, stem + ".jpg"), sq):
-        return "저장 실패", gr.update(), gr.update(), gr.update()
+        return "저장 실패", None, classes
     with open(os.path.join(LBL_DIR, stem + ".txt"), "w") as f:
         f.write(f"{cls_id} 0.5 0.5 1.0 1.0\n")
     total = sum(count_images(c) for c in classes)
-    status = f"✓ '{cls}' {count_images(cls)}장 (전체 {total}장)"
+    return (f"✓ '{cls}' {count_images(cls)}장 (전체 {total}장)",
+            list_images(cls)[-40:], classes)
+
+
+def capture_one(cam_val, latest_val, cls, size):
+    """📸 사진찍기(단발) — 현재 프레임 1장 저장. cam 값이 없으면 스트림 최신 프레임 사용."""
+    img = cam_val if cam_val is not None else latest_val
+    cls = (cls or "").strip()
+    if img is None:
+        return ("📷 카메라 화면이 아직 없습니다. 카메라 허용/시작 후 잠시 뒤 다시 눌러 주세요.",
+                gr.update(), gr.update(), gr.update())
+    if not cls:
+        return ("클래스 이름을 입력하거나 기존 이름을 골라 주세요.",
+                gr.update(), gr.update(), gr.update())
+    status, gal, classes = _save_one(img, cls, size)
     upd = gr.update(choices=classes, value=cls)
-    return status, list_images(cls)[-40:], upd, upd
+    return status, (gal if gal is not None else gr.update()), upd, upd
+
+
+def stream_tick(frame, running, cls, size):
+    """웹캠 스트림: 최신 프레임을 State 에 보관 + 연속찍기 중이면 매 프레임 저장."""
+    if frame is None:
+        return None, gr.update(), gr.update()
+    cls = (cls or "").strip()
+    if running and cls:
+        status, gal, _ = _save_one(frame, cls, size)
+        return frame, status, (gal if gal is not None else gr.update())
+    return frame, gr.update(), gr.update()
 
 
 def show_gallery(cls):
@@ -328,21 +348,26 @@ def build():
         with gr.Tab("① 데이터 모으기"):
             with gr.Row():
                 with gr.Column():
-                    cam = gr.Image(sources=["webcam"], type="numpy",
-                                   label="카메라 (브라우저에서 카메라 허용)",
+                    cam = gr.Image(sources=["webcam"], streaming=True,
+                                   type="numpy",
+                                   label="카메라 (허용하면 실시간 미리보기)",
                                    height=320)
+                    latest = gr.State(None)      # 스트림 최신 프레임
+                    running = gr.State(False)    # 연속찍기 진행 여부
                     with gr.Row():
                         cls_in = gr.Dropdown(
                             _class_choices(), allow_custom_value=True,
                             label="클래스 이름 (새 이름 입력 또는 기존 선택)",
                             scale=2)
                         size_in = gr.Radio(SIZES, value=320, label="사진 크기")
-                    cap_btn = gr.Button("📸 사진 찍기 (현재 화면 저장)",
-                                        variant="primary")
+                    with gr.Row():
+                        shot_btn = gr.Button("📸 사진찍기", variant="primary")
+                        burst_btn = gr.Button("🔴 연속찍기")
+                        stop_btn = gr.Button("■ 중지", variant="stop")
                     cap_status = gr.Markdown("")
                     gr.Markdown(
-                        "📷 카메라의 **촬영 버튼**을 누를 때마다 자동 저장됩니다 — "
-                        "각도·거리를 바꿔 **연속으로 여러 장**(20~50장) 찍으세요. "
+                        "**📸 사진찍기**=1장 · **🔴 연속찍기**=약 0.5초마다 자동 저장 · "
+                        "**■ 중지**. 각도·거리를 바꿔 20~50장 모으면 좋아요. "
                         "**기존 이름을 고르면 그 사진에 이어서 추가**됩니다.")
                 with gr.Column():
                     cls_dd = gr.Dropdown(_class_choices(), label="모은 것 보기",
@@ -413,11 +438,17 @@ def build():
         def _gate3():
             return gr.update(interactive=_have_model())
 
-        # 카메라에서 촬영(스냅샷)할 때마다 자동 저장 + '사진 찍기' 버튼도 동일 동작
+        # 웹캠 스트림: 최신 프레임 보관 + 연속찍기 중이면 매 프레임 저장
+        cam.stream(stream_tick, [cam, running, cls_in, size_in],
+                   [latest, cap_status, gallery], stream_every=0.5)
+        # 📸 사진찍기(단발)
         _cap_out = [cap_status, gallery, cls_dd, cls_in]
-        cam.change(capture, [cam, cls_in, size_in], _cap_out).then(
-            _counts_md, None, counts).then(_gate2, None, tab2)
-        cap_btn.click(capture, [cam, cls_in, size_in], _cap_out).then(
+        shot_btn.click(capture_one, [cam, latest, cls_in, size_in],
+                       _cap_out).then(_counts_md, None, counts).then(
+            _gate2, None, tab2)
+        # 🔴 연속찍기 시작 / ■ 중지
+        burst_btn.click(lambda: True, None, running)
+        stop_btn.click(lambda: False, None, running).then(
             _counts_md, None, counts).then(_gate2, None, tab2)
         cls_dd.change(show_gallery, cls_dd, gallery)
         refresh_btn.click(lambda: (gr.update(choices=_class_choices()),
