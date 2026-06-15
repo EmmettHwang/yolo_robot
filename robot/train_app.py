@@ -47,11 +47,11 @@ def capture(img_rgb, cls, size):
     """현재 카메라 프레임을 클래스에 저장. cls 가 기존 이름이면 그 사진에 이어서 추가."""
     cls = (cls or "").strip()
     if img_rgb is None:
-        return ("📷 카메라 화면이 아직 없습니다. 브라우저에서 카메라 사용을 허용하고 "
-                "잠시 기다린 뒤 다시 눌러 주세요.", None, gr.update(), gr.update())
+        # 실패해도 기존 갤러리는 그대로 둔다(지우지 않음)
+        return (gr.update(), gr.update(), gr.update(), gr.update())
     if not cls:
         return ("클래스 이름을 입력하거나, 기존 이름을 골라 주세요.",
-                None, gr.update(), gr.update())
+                gr.update(), gr.update(), gr.update())
     classes = load_classes()
     if cls not in classes:                       # 새 클래스면 추가, 기존이면 이어붙임
         classes.append(cls)
@@ -65,7 +65,7 @@ def capture(img_rgb, cls, size):
     bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
     sq = cv2.resize(bgr, (size, size))
     if not _imwrite(os.path.join(IMG_DIR, stem + ".jpg"), sq):
-        return "저장 실패", None, gr.update(), gr.update()
+        return "저장 실패", gr.update(), gr.update(), gr.update()
     with open(os.path.join(LBL_DIR, stem + ".txt"), "w") as f:
         f.write(f"{cls_id} 0.5 0.5 1.0 1.0\n")
     total = sum(count_images(c) for c in classes)
@@ -78,11 +78,6 @@ def show_gallery(cls):
     if not cls:
         return None
     return list_images(cls)[-40:]
-
-
-def _keep_frame(f):
-    """웹캠 스트림 프레임을 State 에 보관(버튼 클릭 시 현재 화면을 쓰기 위해)."""
-    return f
 
 
 def init_view():
@@ -283,8 +278,9 @@ def study_open(name, progress=gr.Progress()):
         import fitz
     except Exception:
         return []
+    zoom = 2.6      # 선명한 폰트(고해상도). 캐시는 해상도별로 분리.
     stem = os.path.splitext(name)[0]
-    out_dir = os.path.join(AI_LECTURE_DIR, "_pages", stem)
+    out_dir = os.path.join(AI_LECTURE_DIR, "_pages", f"{stem}_z{int(zoom*10)}")
     os.makedirs(out_dir, exist_ok=True)
     doc = fitz.open(path)
     imgs = []
@@ -293,7 +289,7 @@ def study_open(name, progress=gr.Progress()):
         progress((i + 1) / max(1, n), desc=f"{i + 1}/{n}쪽 준비 중...")
         out = os.path.join(out_dir, f"p{i:03d}.png")
         if not os.path.exists(out):
-            pix = doc[i].get_pixmap(matrix=fitz.Matrix(1.6, 1.6))
+            pix = doc[i].get_pixmap(matrix=fitz.Matrix(zoom, zoom))
             pix.save(out)
         imgs.append(out)
     doc.close()
@@ -323,10 +319,9 @@ def build():
         with gr.Tab("① 데이터 모으기"):
             with gr.Row():
                 with gr.Column():
-                    cam = gr.Image(sources=["webcam"], streaming=True,
-                                   type="numpy",
-                                   label="카메라 (허용하면 실시간 표시)", height=320)
-                    cam_frame = gr.State(None)     # 최신 프레임 보관(버튼 캡처용)
+                    cam = gr.Image(sources=["webcam"], type="numpy",
+                                   label="카메라 (브라우저에서 카메라 허용)",
+                                   height=320)
                     with gr.Row():
                         cls_in = gr.Dropdown(
                             _class_choices(), allow_custom_value=True,
@@ -336,8 +331,10 @@ def build():
                     cap_btn = gr.Button("📸 사진 찍기 (현재 화면 저장)",
                                         variant="primary")
                     cap_status = gr.Markdown("")
-                    gr.Markdown("같은 대상을 각도·거리를 바꿔 20~50장 찍으면 좋아요. "
-                                "**기존 이름을 고르면 그 사진에 이어서 추가**됩니다.")
+                    gr.Markdown(
+                        "📷 카메라의 **촬영 버튼**을 누를 때마다 자동 저장됩니다 — "
+                        "각도·거리를 바꿔 **연속으로 여러 장**(20~50장) 찍으세요. "
+                        "**기존 이름을 고르면 그 사진에 이어서 추가**됩니다.")
                 with gr.Column():
                     cls_dd = gr.Dropdown(_class_choices(), label="모은 것 보기",
                                          interactive=True)
@@ -386,16 +383,19 @@ def build():
                                           size="lg", visible=False)
 
         with gr.Tab("📖 인공지능 공부하기"):
-            gr.Markdown("학습이 도는 동안 **인공지능 자료**를 읽어 보세요. "
-                        "(`assets/ai_lecture` 폴더의 PDF — 자료를 추가하면 ↻ 목록)")
+            gr.Markdown(
+                "학습이 도는 동안 **인공지능 자료**를 읽어 보세요. "
+                "(`assets/ai_lecture` 폴더의 PDF — 자료를 추가하면 ↻ 목록)\n"
+                "🔍 **페이지를 클릭하면 크게(전체) 보기**, 우측 상단 **⛶ 전체화면**, "
+                "**✕ 또는 Esc**로 돌아옵니다.")
             with gr.Row():
                 study_dd = gr.Dropdown(_lecture_names(), label="자료 선택 (PDF)",
                                        scale=4)
                 study_btn = gr.Button("📖 열기", variant="primary", scale=1)
                 study_ref = gr.Button("↻ 목록", scale=1)
-            study_gallery = gr.Gallery(label="자료 보기 (아래로 스크롤)",
-                                       columns=1, height=760,
-                                       object_fit="contain")
+            study_gallery = gr.Gallery(label="자료 보기 (아래로 스크롤 · 클릭하면 크게)",
+                                       columns=1, height=820,
+                                       object_fit="contain", preview=False)
 
         # ---------- 이벤트 ----------
         def _gate2():
@@ -404,11 +404,11 @@ def build():
         def _gate3():
             return gr.update(interactive=_have_model())
 
-        # 웹캠 실시간 프레임을 State 에 보관 → 버튼 한 번으로 현재 화면 저장
-        cam.stream(_keep_frame, cam, cam_frame, stream_every=0.3,
-                   show_progress="hidden")
-        cap_btn.click(capture, [cam_frame, cls_in, size_in],
-                      [cap_status, gallery, cls_dd, cls_in]).then(
+        # 카메라에서 촬영(스냅샷)할 때마다 자동 저장 + '사진 찍기' 버튼도 동일 동작
+        _cap_out = [cap_status, gallery, cls_dd, cls_in]
+        cam.change(capture, [cam, cls_in, size_in], _cap_out).then(
+            _counts_md, None, counts).then(_gate2, None, tab2)
+        cap_btn.click(capture, [cam, cls_in, size_in], _cap_out).then(
             _counts_md, None, counts).then(_gate2, None, tab2)
         cls_dd.change(show_gallery, cls_dd, gallery)
         refresh_btn.click(lambda: (gr.update(choices=_class_choices()),
