@@ -82,34 +82,27 @@ def _save_one(img_rgb, cls, size):
             _recent(cls), classes)
 
 
-def capture_one(cam_val, latest_val, cls, size):
-    """📸 사진찍기(단발) — 현재 프레임 1장 저장. cam 값이 없으면 스트림 최신 프레임 사용."""
-    img = cam_val if cam_val is not None else latest_val
+def on_frame(frame, mode, cls, size):
+    """웹캠 스트림 프레임 처리 — 저장을 전부 '스트림 안에서' 한다(버튼은 모드만 설정).
+
+    버튼 클릭 이벤트에서는 스트리밍 프레임을 못 받는 경우가 있어서, 라이브
+    프레임이 확실히 있는 스트림 핸들러에서 저장한다.
+      mode: 'idle'(대기) · 'one'(한 장 요청) · 'burst'(연속)
+      outputs: cap_status, gallery, counts, mode
+    """
     cls = (cls or "").strip()
-    if img is None:
-        return ("📷 카메라 화면이 아직 없습니다. 카메라 허용/시작 후 잠시 뒤 다시 눌러 주세요.",
-                gr.update(), gr.update(), gr.update())
+    if mode == "idle":
+        return gr.skip(), gr.skip(), gr.skip(), "idle"
+    if frame is None:
+        return "📷 카메라 프레임을 기다리는 중...", gr.skip(), gr.skip(), mode
     if not cls:
         return ("클래스 이름을 입력하거나 기존 이름을 골라 주세요.",
-                gr.update(), gr.update(), gr.update())
-    status, gal, classes = _save_one(img, cls, size)
-    upd = gr.update(choices=classes, value=cls)
-    return status, (gal if gal is not None else gr.update()), upd, upd
-
-
-def keep_latest(frame):
-    """웹캠 스트림: 최신 프레임만 State 에 보관(갤러리는 건드리지 않음 → 덮어쓰기 방지)."""
-    return frame
-
-
-def burst_tick(cam_val, latest_val, cls, size):
-    """🔴 연속찍기: Timer 가 약 0.5초마다 호출 → 현재 프레임 1장 저장 + 갤러리 갱신."""
-    img = cam_val if cam_val is not None else latest_val
-    cls = (cls or "").strip()
-    if img is None or not cls:
-        return gr.skip(), gr.skip()
-    status, gal, _ = _save_one(img, cls, size)
-    return "🔴 연속 촬영 중 · " + status, (gal if gal is not None else gr.skip())
+                gr.skip(), gr.skip(), "idle" if mode == "one" else mode)
+    status, gal, _ = _save_one(frame, cls, size)
+    gal_out = gal if gal is not None else gr.skip()
+    if mode == "one":
+        return status, gal_out, _counts_md(), "idle"        # 한 장 찍고 멈춤
+    return "🔴 연속 촬영 중 · " + status, gal_out, _counts_md(), "burst"
 
 
 def show_gallery(cls):
@@ -380,8 +373,7 @@ def build():
                                    type="numpy", elem_id="datacam",
                                    label="카메라 (허용하면 실시간 미리보기)",
                                    height=320)
-                    latest = gr.State(None)              # 스트림 최신 프레임
-                    timer = gr.Timer(0.5, active=False)  # 연속찍기 간격
+                    mode = gr.State("idle")   # idle | one(한 장) | burst(연속)
                     with gr.Row():
                         gr.Markdown("### 클래스")
                         cls_in = gr.Dropdown(
@@ -466,24 +458,20 @@ def build():
         def _gate3():
             return gr.update(interactive=_have_model())
 
-        # 웹캠 스트림: 최신 프레임만 State 에 보관(갤러리 안 건드림 → 덮어쓰기 방지)
-        cam.stream(keep_latest, cam, latest, show_progress="hidden")
-        # 📸 사진찍기(단발) — 저장 후 셔터음
-        _cap_out = [cap_status, gallery, cls_dd, cls_in]
-        shot_btn.click(capture_one, [cam, latest, cls_in, size_in], _cap_out,
-                       show_progress="hidden").then(
-            _counts_md, None, counts).then(_gate2, None, tab2).then(
-            None, None, None, js=_SHUTTER_JS)
-        # 🔴 연속찍기: Timer 켜기 / ■ 중지: Timer 끄기 ('0.1s' 진행표시 숨김)
-        burst_btn.click(lambda: gr.Timer(active=True), None, timer,
-                        show_progress="hidden")
-        stop_btn.click(lambda: gr.Timer(active=False), None, timer,
-                       show_progress="hidden").then(
-            _counts_md, None, counts).then(_gate2, None, tab2)
-        # Timer 틱마다 1장 저장 + 갤러리 갱신 + 셔터음(찍는 게 보이도록)
-        timer.tick(burst_tick, [cam, latest, cls_in, size_in],
-                   [cap_status, gallery], show_progress="hidden").then(
-            None, None, None, js=_SHUTTER_JS)
+        # 저장은 스트림 핸들러(on_frame)가 수행 — 버튼은 모드만 설정
+        cam.stream(on_frame, [cam, mode, cls_in, size_in],
+                   [cap_status, gallery, counts, mode],
+                   stream_every=0.4, show_progress="hidden")
+        # 📸 사진찍기=한 장 요청(다음 프레임에 저장) · 셔터음
+        shot_btn.click(lambda: "one", None, mode,
+                       show_progress="hidden").then(None, None, None,
+                                                    js=_SHUTTER_JS)
+        # 🔴 연속찍기=burst 모드 · ■ 중지=idle
+        burst_btn.click(lambda: "burst", None, mode,
+                        show_progress="hidden").then(None, None, None,
+                                                     js=_SHUTTER_JS)
+        stop_btn.click(lambda: "idle", None, mode, show_progress="hidden").then(
+            _gate2, None, tab2)
         cls_dd.change(show_gallery, cls_dd, gallery)
         refresh_btn.click(lambda: (gr.update(choices=_class_choices()),
                                    _counts_md(),
