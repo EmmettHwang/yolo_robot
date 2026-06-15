@@ -44,30 +44,34 @@ def _class_choices():
 
 
 def capture(img_rgb, cls, size):
+    """현재 카메라 프레임을 클래스에 저장. cls 가 기존 이름이면 그 사진에 이어서 추가."""
     cls = (cls or "").strip()
     if img_rgb is None:
-        return "웹캠 영상이 없습니다. 카메라를 허용하세요.", None, gr.update()
+        return ("📷 카메라 화면이 아직 없습니다. 브라우저에서 카메라 사용을 허용하고 "
+                "잠시 기다린 뒤 다시 눌러 주세요.", None, gr.update(), gr.update())
     if not cls:
-        return "클래스 이름을 먼저 입력하세요.", None, gr.update()
+        return ("클래스 이름을 입력하거나, 기존 이름을 골라 주세요.",
+                None, gr.update(), gr.update())
     classes = load_classes()
-    if cls not in classes:
+    if cls not in classes:                       # 새 클래스면 추가, 기존이면 이어붙임
         classes.append(cls)
         save_classes(classes)
     cls_id = classes.index(cls)
     os.makedirs(IMG_DIR, exist_ok=True)
     os.makedirs(LBL_DIR, exist_ok=True)
-    n = next_index(cls)
+    n = next_index(cls)                          # 기존 장수 다음 번호 → 이어서 추가
     stem = f"{cls}_{n:04d}"
     size = int(size)
     bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
     sq = cv2.resize(bgr, (size, size))
     if not _imwrite(os.path.join(IMG_DIR, stem + ".jpg"), sq):
-        return "저장 실패", None, gr.update()
+        return "저장 실패", None, gr.update(), gr.update()
     with open(os.path.join(LBL_DIR, stem + ".txt"), "w") as f:
         f.write(f"{cls_id} 0.5 0.5 1.0 1.0\n")
     total = sum(count_images(c) for c in classes)
     status = f"✓ '{cls}' {count_images(cls)}장 (전체 {total}장)"
-    return status, list_images(cls)[-40:], gr.update(choices=classes, value=cls)
+    upd = gr.update(choices=classes, value=cls)
+    return status, list_images(cls)[-40:], upd, upd
 
 
 def show_gallery(cls):
@@ -76,20 +80,27 @@ def show_gallery(cls):
     return list_images(cls)[-40:]
 
 
+def _keep_frame(f):
+    """웹캠 스트림 프레임을 State 에 보관(버튼 클릭 시 현재 화면을 쓰기 위해)."""
+    return f
+
+
 def init_view():
     """앱 로드 시 클래스 드롭다운/갤러리/카운트를 채운다(첫 클래스 미리 보기)."""
     classes = load_classes()
     first = classes[0] if classes else None
     return (gr.update(choices=classes, value=first),
-            show_gallery(first), _counts_md())
+            show_gallery(first), _counts_md(),
+            gr.update(choices=classes))      # cls_in(입력용 드롭다운)도 갱신
 
 
 def delete_selected_class(cls):
     if cls and cls in load_classes():
         delete_class(cls)
     classes = load_classes()
-    return (gr.update(choices=classes, value=(classes[0] if classes else None)),
-            None, _counts_md())
+    first = classes[0] if classes else None
+    return (gr.update(choices=classes, value=first),
+            None, _counts_md(), gr.update(choices=classes, value=None))
 
 
 def _counts_md():
@@ -312,15 +323,21 @@ def build():
         with gr.Tab("① 데이터 모으기"):
             with gr.Row():
                 with gr.Column():
-                    cam = gr.Image(sources=["webcam"], type="numpy",
-                                   label="카메라", height=320)
+                    cam = gr.Image(sources=["webcam"], streaming=True,
+                                   type="numpy",
+                                   label="카메라 (허용하면 실시간 표시)", height=320)
+                    cam_frame = gr.State(None)     # 최신 프레임 보관(버튼 캡처용)
                     with gr.Row():
-                        cls_in = gr.Textbox(label="무엇을 가르칠까요? (이름)",
-                                            scale=2, placeholder="예: 내 로봇")
+                        cls_in = gr.Dropdown(
+                            _class_choices(), allow_custom_value=True,
+                            label="무엇을 가르칠까요? (새 이름 입력 또는 기존 선택)",
+                            scale=2)
                         size_in = gr.Radio(SIZES, value=320, label="사진 크기")
-                    cap_btn = gr.Button("📸 사진 찍기", variant="primary")
+                    cap_btn = gr.Button("📸 사진 찍기 (현재 화면 저장)",
+                                        variant="primary")
                     cap_status = gr.Markdown("")
-                    gr.Markdown("같은 대상을 각도·거리를 바꿔 20~50장 찍으면 좋아요.")
+                    gr.Markdown("같은 대상을 각도·거리를 바꿔 20~50장 찍으면 좋아요. "
+                                "**기존 이름을 고르면 그 사진에 이어서 추가**됩니다.")
                 with gr.Column():
                     cls_dd = gr.Dropdown(_class_choices(), label="모은 것 보기",
                                          interactive=True)
@@ -387,15 +404,21 @@ def build():
         def _gate3():
             return gr.update(interactive=_have_model())
 
-        cap_btn.click(capture, [cam, cls_in, size_in],
-                      [cap_status, gallery, cls_dd]).then(
+        # 웹캠 실시간 프레임을 State 에 보관 → 버튼 한 번으로 현재 화면 저장
+        cam.stream(_keep_frame, cam, cam_frame, stream_every=0.3,
+                   show_progress="hidden")
+        cap_btn.click(capture, [cam_frame, cls_in, size_in],
+                      [cap_status, gallery, cls_dd, cls_in]).then(
             _counts_md, None, counts).then(_gate2, None, tab2)
         cls_dd.change(show_gallery, cls_dd, gallery)
         refresh_btn.click(lambda: (gr.update(choices=_class_choices()),
-                                   _counts_md()), None, [cls_dd, counts]).then(
+                                   _counts_md(),
+                                   gr.update(choices=_class_choices())),
+                          None, [cls_dd, counts, cls_in]).then(
             _gate2, None, tab2)
         del_btn.click(delete_selected_class, cls_dd,
-                      [cls_dd, gallery, counts]).then(_gate2, None, tab2)
+                      [cls_dd, gallery, counts, cls_in]).then(
+            _gate2, None, tab2)
         train_btn.click(train, [epochs_in, imgsz_in, patience_in],
                         [train_log, result_graph, result_md]).then(
             _gate3, None, tab3)
@@ -407,7 +430,7 @@ def build():
                         study_dd)
 
         # 앱 로드 시 초기화(클래스 보기/카운트 + 탭 잠금 상태)
-        demo.load(init_view, None, [cls_dd, gallery, counts])
+        demo.load(init_view, None, [cls_dd, gallery, counts, cls_in])
         demo.load(lambda: (_gate2(), _gate3()), None, [tab2, tab3])
         # 진행 로그를 항상 맨 아래로 고정(최신이 끝줄에 보이도록)
         demo.load(None, None, None, js="""
