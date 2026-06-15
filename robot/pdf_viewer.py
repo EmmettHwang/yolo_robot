@@ -38,17 +38,19 @@ def parse_toc(doc) -> list:
 
 
 class PdfViewer(tk.Toplevel):
-    def __init__(self, parent, path=MANUAL_PDF):
+    def __init__(self, parent, path=MANUAL_PDF, title="📖 라인코어 M 매뉴얼",
+                 show_toc=True):
         super().__init__(parent)
         import fitz
         self._fitz = fitz
-        self.title("📖 라인코어 M 매뉴얼")
+        self.title(title)
         self.geometry("1040x780")
         self.doc = fitz.open(path)
         self.zoom = 1.5
         self.page = 0
         self._imgtk = None
-        self.toc = parse_toc(self.doc)
+        self.show_toc = show_toc
+        self.toc = parse_toc(self.doc) if show_toc else []
         self._build()
         self._show_page(0)
 
@@ -68,27 +70,29 @@ class PdfViewer(tk.Toplevel):
 
         body = tk.Frame(self); body.pack(fill="both", expand=True)
 
-        # 좌: 목차
-        left = tk.Frame(body, width=300); left.pack(side="left", fill="y")
-        left.pack_propagate(False)
-        tk.Label(left, text="목 차 (클릭하면 이동)",
-                 font=("Malgun Gothic", 11, "bold")).pack(anchor="w",
-                                                          padx=8, pady=6)
-        self.tree = ttk.Treeview(left, show="tree")
-        tsb = ttk.Scrollbar(left, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=tsb.set)
-        tsb.pack(side="right", fill="y")
-        self.tree.pack(side="left", fill="both", expand=True)
-        last_top = ""
-        for title, printed in self.toc:
-            label = f"{title}   · {printed}p"
-            if _TOP_RE.match(title):
-                last_top = self.tree.insert("", "end", text=label,
-                                            values=(printed,), open=True)
-            else:
-                self.tree.insert(last_top or "", "end", text=label,
-                                 values=(printed,))
-        self.tree.bind("<<TreeviewSelect>>", self._on_toc)
+        # 좌: 목차 (매뉴얼 등 show_toc=True 일 때만)
+        if self.show_toc:
+            left = tk.Frame(body, width=300); left.pack(side="left", fill="y")
+            left.pack_propagate(False)
+            tk.Label(left, text="목 차 (클릭하면 이동)",
+                     font=("Malgun Gothic", 11, "bold")).pack(anchor="w",
+                                                              padx=8, pady=6)
+            self.tree = ttk.Treeview(left, show="tree")
+            tsb = ttk.Scrollbar(left, orient="vertical",
+                                command=self.tree.yview)
+            self.tree.configure(yscrollcommand=tsb.set)
+            tsb.pack(side="right", fill="y")
+            self.tree.pack(side="left", fill="both", expand=True)
+            last_top = ""
+            for title, printed in self.toc:
+                label = f"{title}   · {printed}p"
+                if _TOP_RE.match(title):
+                    last_top = self.tree.insert("", "end", text=label,
+                                                values=(printed,), open=True)
+                else:
+                    self.tree.insert(last_top or "", "end", text=label,
+                                     values=(printed,))
+            self.tree.bind("<<TreeviewSelect>>", self._on_toc)
 
         # 우: 페이지 이미지(스크롤)
         right = tk.Frame(body); right.pack(side="left", fill="both",
@@ -161,6 +165,18 @@ def open_manual(parent=None):
         PdfViewer(parent)
     except Exception as e:
         messagebox.showerror("매뉴얼 열기 실패",
+                             f"{e}\n(PyMuPDF 설치 필요: pip install pymupdf)")
+
+
+def open_pdf(parent=None, path=None, title="📖 PDF", show_toc=False):
+    """임의 PDF 를 스크롤 뷰어로 연다(목차 없이)."""
+    if not path or not os.path.exists(path):
+        messagebox.showerror("오류", f"PDF 가 없습니다:\n{path}")
+        return
+    try:
+        PdfViewer(parent, path=path, title=title, show_toc=show_toc)
+    except Exception as e:
+        messagebox.showerror("PDF 열기 실패",
                              f"{e}\n(PyMuPDF 설치 필요: pip install pymupdf)")
 
 

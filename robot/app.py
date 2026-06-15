@@ -27,7 +27,7 @@ import serial.tools.list_ports as list_ports
 from PIL import Image, ImageTk, ImageDraw
 
 from paths import (BASE, ROBOT_DIR, CONFIG_INI, LOGO_PATH, ACTIVE_ONNX,
-                   DATA_DIR, MODELS_DIR, ensure_dirs)
+                   DATA_DIR, MODELS_DIR, AI_LECTURE_DIR, ensure_dirs)
 from version import __version__
 from motion_table import COCO_CLASSES, coco_kr
 import trainer
@@ -175,6 +175,7 @@ class App:
         self._train_before_mtime = 0
         self._web_proc = None
         self._base_proc = None        # 기본 모델 가져오기 서브프로세스
+        self._study_win = None        # 인공지능 학습 자료 모달
         # 자동 진행 옵션 (체크박스)
         self.auto_dev = tk.BooleanVar(value=True)    # 설정 후 자동 이동
         self.auto_yolo = tk.BooleanVar(value=False)  # 모델 준비 후 자동 이동
@@ -389,7 +390,7 @@ class App:
         except Exception:
             return 0
 
-    # ---------- 학습 웹앱(서버) 연결 ----------
+    # ---------- 로봇 인공지능 학습센터(서버) 연결 ----------
     def _get_train_url(self):
         default = os.getenv("TRAIN_URL", "http://127.0.0.1:7860")
         try:
@@ -406,33 +407,147 @@ class App:
             with open(os.path.join(DATA_DIR, "train_url.txt"), "w",
                       encoding="utf-8") as f:
                 f.write(url)
-            self.model_status.config(text=f"학습 웹앱 주소 저장: {url}",
-                                     fg="#2e7d32")
+            self.model_status.config(
+                text=f"로봇 인공지능 학습센터 주소 저장: {url}", fg="#2e7d32")
         except Exception:
             pass
 
     def _open_train_web(self):
-        """학습 웹앱(서버) 페이지를 웹뷰로 열고, 닫히면 모델 변경 감지→재로드."""
-        if self._train_proc is not None and self._train_proc.poll() is None:
-            return
+        """로봇 인공지능 학습센터(웹앱)를 기본 브라우저에서 연다(모달 잠금 없음).
+        학습센터에서 새 모델을 내보내면(active.onnx 변경) 자동으로 다시 로드한다."""
         url = (self.train_url_var.get() or "").strip() or self._get_train_url()
         try:
-            self.rec_view.stop()       # 인식이 잡은 카메라/포트 반환
+            self.rec_view.stop()       # 인식이 잡은 카메라 반환(브라우저 웹캠 사용 가능하게)
         except Exception:
             pass
+        self._suspend_topmost()        # 브라우저가 메인 창에 가려지지 않게
+        import webbrowser
+        try:
+            opened = webbrowser.open(url, new=2)   # 새 탭으로 열기
+        except Exception:
+            opened = False
+        if opened:
+            self.model_status.config(
+                text=f"🌐 브라우저에서 로봇 인공지능 학습센터를 열었습니다 ({url}).\n"
+                     "학습 중에도 이 앱의 다른 탭을 자유롭게 쓰세요. "
+                     "새 모델을 내보내면 자동 반영됩니다(수동: ↻ 모델 새로고침).",
+                fg="#1565c0")
+        else:
+            self.model_status.config(
+                text=f"브라우저를 열지 못했습니다. 직접 접속하세요: {url}", fg="#c62828")
         self._train_before_mtime = self._get_active_mtime()
-        self._suspend_topmost()
-        self._train_proc = subprocess.Popen(
-            [PY, os.path.join(ROBOT_DIR, "webview_window.py"),
-             url, "학습 웹앱"], cwd=BASE, env=self._child_env())
-        self._show_wait_dialog(
-            title="학습 웹앱",
-            heading="🌐  학습 웹앱(서버)",
-            msg=("학습 웹앱에서 데이터 수집·학습·내보내기를 진행하세요.\n"
-                 "끝나면 active.onnx·active.names 를 model/ 폴더에 넣고\n"
-                 "이 창을 닫으면 자동으로 모델을 확인합니다."),
-            waiting="⏳ 학습 웹앱 창을 기다리는 중... (이 창은 잠금 상태)")
-        self._watch_train_proc()
+        self._start_model_watch()
+        self._show_ai_study(auto=True)   # 학습 동안 볼 학습 자료(있으면 자동 표시)
+
+    # ---------- 인공지능 학습 자료(assets/ai_lecture 의 PDF) ----------
+    def _lecture_pdfs(self):
+        import glob
+        try:
+            return sorted(glob.glob(os.path.join(AI_LECTURE_DIR, "*.pdf")))
+        except Exception:
+            return []
+
+    def _show_ai_study(self, auto=False):
+        """assets/ai_lecture 폴더의 PDF 학습 자료를 고르거나 바로 연다.
+
+        auto=True(학습센터 열 때 자동 호출)면 자료가 없을 때 조용히 넘어간다.
+        """
+        pdfs = self._lecture_pdfs()
+        if not pdfs:
+            if not auto:
+                if messagebox.askyesno(
+                        "학습 자료",
+                        "학습 자료(PDF)가 없습니다.\n"
+                        f"‘{AI_LECTURE_DIR}’ 폴더에 PDF를 넣어 주세요.\n\n"
+                        "폴더를 열까요?"):
+                    try:
+                        os.makedirs(AI_LECTURE_DIR, exist_ok=True)
+                        os.startfile(AI_LECTURE_DIR)
+                    except Exception:
+                        pass
+            return
+        if len(pdfs) == 1:
+            self._open_lecture_pdf(pdfs[0])
+        else:
+            self._pick_lecture_dialog(pdfs)
+
+    def _open_lecture_pdf(self, path):
+        try:
+            import pdf_viewer
+            pdf_viewer.open_pdf(self.root, path,
+                                title="📖 " + os.path.splitext(
+                                    os.path.basename(path))[0])
+        except Exception as e:
+            messagebox.showerror("PDF 열기 실패", str(e))
+
+    def _pick_lecture_dialog(self, pdfs):
+        dlg = tk.Toplevel(self.root)
+        dlg.title("📖 학습 자료 선택")
+        dlg.configure(bg="white")
+        dlg.transient(self.root)
+        dlg.resizable(False, False)
+        tk.Label(dlg, text="볼 학습 자료(PDF)를 고르세요",
+                 font=("Malgun Gothic", 12, "bold"), bg="white").pack(
+            padx=18, pady=(16, 8))
+        names = [os.path.basename(p) for p in pdfs]
+        lb = tk.Listbox(dlg, width=44, height=min(12, max(3, len(names))),
+                        font=("Malgun Gothic", 10), activestyle="none")
+        for n in names:
+            lb.insert("end", n)
+        lb.select_set(0)
+        lb.pack(padx=18)
+
+        def open_sel():
+            sel = lb.curselection()
+            if sel:
+                path = pdfs[sel[0]]
+                dlg.destroy()
+                self._open_lecture_pdf(path)
+            else:
+                dlg.destroy()
+        lb.bind("<Double-Button-1>", lambda e: open_sel())
+        btns = tk.Frame(dlg, bg="white"); btns.pack(pady=14)
+        tk.Button(btns, text="열기", bg="#28a745", fg="white", relief="flat",
+                  cursor="hand2", width=10, font=("Malgun Gothic", 10, "bold"),
+                  command=open_sel).pack(side="left", padx=6)
+        tk.Button(btns, text="📂 폴더 열기", cursor="hand2", width=12,
+                  command=lambda: (self._open_lecture_folder())).pack(
+            side="left", padx=6)
+        tk.Button(btns, text="취소", cursor="hand2", width=8,
+                  command=dlg.destroy).pack(side="left", padx=6)
+        dlg.update_idletasks()
+        try:
+            x = self.root.winfo_rootx() + 150
+            y = self.root.winfo_rooty() + 130
+            dlg.geometry(f"+{x}+{y}")
+            dlg.grab_set()
+        except Exception:
+            pass
+
+    def _open_lecture_folder(self):
+        try:
+            os.makedirs(AI_LECTURE_DIR, exist_ok=True)
+            os.startfile(AI_LECTURE_DIR)
+        except Exception:
+            pass
+
+    def _start_model_watch(self):
+        """active.onnx 변경(학습센터의 새 모델)을 주기적으로 감지해 자동 재로드."""
+        if getattr(self, "_model_watch_on", False):
+            return
+        self._model_watch_on = True
+        self._watch_train_model()
+
+    def _watch_train_model(self):
+        if not getattr(self, "_model_watch_on", False):
+            return
+        mt = self._get_active_mtime()
+        if mt and mt != self._train_before_mtime:
+            self._train_before_mtime = mt
+            self.model_status.config(text="🔄 새 모델 감지 — 다시 로드합니다...",
+                                     fg="#ef6c00")
+            self._reload_model()
+        self.root.after(2000, self._watch_train_model)
 
     def _open_training(self):
         """(구) 로컬 학습 스튜디오 — 별도 프로세스로 열고, 닫히면 모델 변경 시 재로드."""
@@ -785,9 +900,9 @@ class App:
         self.coco_list.pack(side="left")
         self._set_class_list(list(COCO_CLASSES))
 
-        # 학습 서버(웹앱) 주소
+        # 로봇 인공지능 학습센터(서버) 주소
         urow = tk.Frame(f, bg=BG); urow.pack(pady=(4, 0))
-        tk.Label(urow, text="학습 웹앱 주소:", font=("Malgun Gothic", 9),
+        tk.Label(urow, text="학습센터 주소:", font=("Malgun Gothic", 9),
                  bg=BG, fg="#555").pack(side="left")
         self.train_url_var = tk.StringVar(value=self._get_train_url())
         tk.Entry(urow, textvariable=self.train_url_var, width=30).pack(
@@ -802,10 +917,18 @@ class App:
                   font=("Malgun Gothic", 11, "bold"), bg="#00897b", fg="white",
                   relief="flat", cursor="hand2", height=2, width=16,
                   command=self._import_model).pack(side="left", padx=6)
-        tk.Button(btns, text="🌐 학습 웹앱 열기",
+        tk.Button(btns, text="🌐 로봇 인공지능 학습센터 열기",
                   font=("Malgun Gothic", 11, "bold"), bg="#6a1b9a", fg="white",
-                  relief="flat", cursor="hand2", height=2, width=20,
+                  relief="flat", cursor="hand2", height=2, width=24,
                   command=self._open_train_web).pack(side="left", padx=6)
+        tk.Button(btns, text="↻ 모델 새로고침",
+                  font=("Malgun Gothic", 10), cursor="hand2", height=2,
+                  width=13, command=self._reload_model).pack(side="left",
+                                                             padx=6)
+        tk.Button(btns, text="📖 학습 자료",
+                  font=("Malgun Gothic", 10), cursor="hand2", height=2,
+                  width=11, command=self._show_ai_study).pack(side="left",
+                                                              padx=6)
         self.train_next = tk.Button(
             btns, text="다음 → 자율활동시작 ▶", font=("Malgun Gothic", 11, "bold"),
             bg="#9e9e9e", fg="white", relief="flat", height=2, width=18,

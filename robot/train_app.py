@@ -262,8 +262,8 @@ def _have_model():
 
 
 def build():
-    with gr.Blocks(title="로봇 학습") as demo:
-        gr.Markdown("# 🧠 로봇 학습\n"
+    with gr.Blocks(title="로봇 인공지능 학습센터") as demo:
+        gr.Markdown("# 🧠 로봇 인공지능 학습센터\n"
                     "**① 데이터 모으기 → ② 학습하기 → ③ 내보내기** 순서로 진행하세요.\n"
                     "_데이터를 모아야 학습 탭이, 학습을 마쳐야 내보내기 탭이 열립니다._")
 

@@ -63,6 +63,7 @@ BEST_WEIGHTS = os.path.join(RUNS_DIR, "custom", "weights", "best.pt")
 ASSETS = os.path.join(BASE, "assets")
 SOUNDS_DIR = os.path.join(ASSETS, "sounds")   # (예약) 효과음 파일용
 MP3_DIR = os.path.join(ASSETS, "mp3")
+AI_LECTURE_DIR = os.path.join(ASSETS, "ai_lecture")   # 인공지능 학습 자료(PDF)
 # 이미지 → ./image, PDF/프로토콜 → ./protocol
 IMAGE_DIR = os.path.join(BASE, "image")
 PROTOCOL_DIR = os.path.join(BASE, "protocol")
@@ -76,7 +77,7 @@ FONT_PATH = "C:/Windows/Fonts/malgun.ttf"
 
 def ensure_dirs() -> None:
     """필요한 디렉터리를 만들어 둔다."""
-    for d in (DATA_DIR, SOUNDS_DIR, MP3_DIR, MODELS_DIR):
+    for d in (DATA_DIR, SOUNDS_DIR, MP3_DIR, MODELS_DIR, AI_LECTURE_DIR):
         os.makedirs(d, exist_ok=True)
 
 
