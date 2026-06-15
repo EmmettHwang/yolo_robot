@@ -134,7 +134,7 @@ class BlockEditor(ttk.Frame):
         bar = tk.Frame(self); bar.pack(fill="x", padx=8, pady=(8, 4))
         tk.Label(bar, text="🧩 블록 코딩", font=("Malgun Gothic", 13, "bold")
                  ).pack(side="left")
-        tk.Label(bar, text="  ≡ 잡고 드래그=순서·객체 이동 · 더블클릭=편집",
+        tk.Label(bar, text="  ≡ 드래그=순서·객체 이동 · ✎ 편집(또는 더블클릭)",
                  font=("Malgun Gothic", 9), fg="#888").pack(side="left")
 
         tk.Label(bar, text="객체 추가:", font=("Malgun Gothic", 9)).pack(
@@ -320,6 +320,10 @@ class BlockEditor(ttk.Frame):
                   cursor="hand2",
                   command=lambda: self._del_step(label, idx)).pack(
             side="right", padx=4)
+        tk.Button(top, text="✎ 편집", bg="#1565c0", fg="white", relief="flat",
+                  bd=0, cursor="hand2", font=("Malgun Gothic", 8, "bold"),
+                  command=lambda: self._edit_step(label, idx)).pack(
+            side="right", padx=2)
 
         tk.Label(body, text=_motion_text(step.get("motion")), bg=bg,
                  anchor="w", font=("Malgun Gothic", 10, "bold")).pack(
@@ -338,14 +342,20 @@ class BlockEditor(ttk.Frame):
         meta = {"frame": fr, "win": win, "label": label, "idx": idx}
         self._blocks.append(meta)
 
-        # 드래그(손잡이) + 더블클릭(편집)
+        # 드래그(손잡이)
         handle.bind("<ButtonPress-1>",
                     lambda e, m=meta: self._drag_start(m))
         handle.bind("<B1-Motion>", lambda e: self._drag_move())
         handle.bind("<ButtonRelease-1>", lambda e: self._drag_drop())
-        for w in (fr, body, handle):
-            w.bind("<Double-Button-1>",
-                   lambda e, l=label, i=idx: self._edit_step(l, i))
+
+        # 더블클릭(편집) — 블록 전체(라벨 포함, 버튼 제외)에 연결
+        def _bind_dclick(widget):
+            if not isinstance(widget, tk.Button):
+                widget.bind("<Double-Button-1>",
+                            lambda e, l=label, i=idx: self._edit_step(l, i))
+            for ch in widget.winfo_children():
+                _bind_dclick(ch)
+        _bind_dclick(fr)
 
     def _draw_add(self, label, count, x, y):
         if count >= MAX_STEPS:
