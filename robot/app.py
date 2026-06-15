@@ -121,8 +121,8 @@ class App:
         self.nb.pack(fill="both", expand=True, padx=8, pady=8)
         self.tab_dev = self._tab_devices(self.nb)
         self.tab_train = self._tab_training(self.nb)
+        self.rec_view = RecognitionView(self.nb)     # 블록탭 미리보기가 참조 → 먼저 생성
         self.tab_act = self._tab_actions(self.nb)
-        self.rec_view = RecognitionView(self.nb)
         self.nb.add(self.tab_dev, text="  ①  ⚙ 로봇장치설정  ")
         self.nb.add(self.tab_train, text="  ②  🧠 인공지능학습  ")
         self.nb.add(self.tab_act, text="  ③  🎯 인식및반응설정  ")
@@ -533,8 +533,12 @@ class App:
         sub.add(tab_table, text="  📋 액션스크립터  ")
         self._act_tab_table = tab_table
 
-        # ③-2  블록 코딩 (캔버스 드래그형)
+        # ③-2  블록 코딩 (캔버스 드래그형) + 실시간 미리보기/로봇 시뮬레이션
         tab_block = ttk.Frame(sub)
+        from sim_preview import SimPreview
+        self.sim_preview = SimPreview(tab_block, self.rec_view)
+        self.sim_preview.pack(fill="x")
+        ttk.Separator(tab_block, orient="horizontal").pack(fill="x", pady=2)
         self.block_view = BlockEditor(tab_block,
                                       on_change=self._on_block_change)
         self.block_view.pack(fill="both", expand=True)
@@ -621,6 +625,11 @@ class App:
                 self.action_editor._autosave()
             except Exception:
                 pass
+        elif prev is self._act_tab_block:
+            try:
+                self.sim_preview.stop()      # 블록탭 떠나면 미리보기 정지
+            except Exception:
+                pass
         # 들어온 탭을 JSON에서 다시 읽어 동기화(단일 데이터 소스)
         if cur is self._act_tab_table:
             try:
@@ -630,6 +639,10 @@ class App:
         elif cur is self._act_tab_block:
             try:
                 self.block_view.reload()
+            except Exception:
+                pass
+            try:
+                self.sim_preview.start()     # 블록탭 들어오면 미리보기 시작
             except Exception:
                 pass
         elif cur is self._act_tab_py:
@@ -756,10 +769,22 @@ class App:
                 self.rec_view.reload_mapping()
             except Exception:
                 pass
+            try:
+                self.sim_preview.stop()       # ③ 떠나면 미리보기 정지
+            except Exception:
+                pass
         self._prev_tab = current
 
         if current is self.tab_train:
             self._load_model_async()
+        elif current is self.tab_act:
+            # 블록 코딩 하위 탭이 활성화돼 있으면 미리보기 시작
+            try:
+                if self._act_sub.nametowidget(self._act_sub.select()) \
+                        is self._act_tab_block:
+                    self.sim_preview.start()
+            except Exception:
+                pass
         elif current is self.rec_view:
             # 매핑 반영 + 렌더 루프 재가동(멈춤 방지)
             try:
@@ -915,6 +940,10 @@ class App:
     def _on_close(self):
         self._save_win_geom()        # 현재 위치/크기 기억
         self._hide_wait_dialog()
+        try:
+            self.sim_preview.stop()
+        except Exception:
+            pass
         try:
             self.rec_view.on_close()
         except Exception:

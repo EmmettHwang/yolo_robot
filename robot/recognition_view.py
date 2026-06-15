@@ -130,6 +130,10 @@ class RecognitionView(ttk.Frame):
         self._last_acted = ""
         self._last_trigger = 0.0
         self._empty = 0
+        # 블록코딩 시뮬레이션 패널이 읽어 가는 '마지막 실행 시퀀스' 훅
+        self._react_id = 0
+        self._last_seq = []
+        self._last_seq_label = ""
         self._map_mtime = self._actions_mtime()   # 반응 설정 파일 변경 감지용
         self._last_map_check = 0.0
         # 인식 지속시간 추적
@@ -558,6 +562,10 @@ class RecognitionView(ttk.Frame):
                 if seq and self.runner:
                     self.runner.action_sequence(seq, sound_on=self.sound_on)
                     self._log_sequence(top_label, top_conf, seq, count, skipped)
+                    # 시뮬레이션 패널용 훅(마지막 실행 시퀀스 공개)
+                    self._last_seq = [dict(s) for s in seq]
+                    self._last_seq_label = top_label
+                    self._react_id += 1
                 elif skipped:
                     self._log(f"[{_clock(now)}] {top_label}: 조건 불충족으로 "
                               f"실행할 동작 없음")
