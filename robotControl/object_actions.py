@@ -154,18 +154,23 @@ def perform(label: str, runner, player, mapping: dict = None) -> bool:
 # ============================================================
 # 편집 UI
 # ============================================================
+def active_class_list() -> list:
+    """현재 적용된 모델(active.names)의 클래스 목록. 없으면 COCO 80."""
+    try:
+        from paths import get_active_classes
+        names = get_active_classes()
+        if names:
+            return list(names)
+    except Exception:
+        pass
+    return list(COCO_CLASSES)
+
+
 class ActionEditor(ttk.Frame):
     def __init__(self, master, class_names=None, **kw):
         super().__init__(master, **kw)
         self.mapping = load_actions()
-        base = list(COCO_CLASSES)
-        for c in (class_names or []):
-            if c not in base:
-                base.append(c)
-        for k in self.mapping.keys():
-            if k not in base:
-                base.append(k)
-        self.all_objects = base
+        self.all_objects = self._object_base()
         self._obj_num = {o: i + 1 for i, o in enumerate(self.all_objects)}
         self._motion_values = ([NONE_MOTION]
                                + [motion_label(n) for n in ALL_MOTIONS]
@@ -176,6 +181,17 @@ class ActionEditor(ttk.Frame):
         self.mp3_items = mp3_library.list_mp3()
         self._build()
         self._load_existing()
+
+    def _object_base(self) -> list:
+        """객체 목록 = 현재 모델(active.names)의 클래스 + 기존 반응이 등록된 객체.
+
+        YOLO 기본이면 COCO 80, 내 모델이면 그 모델의 클래스만 나온다.
+        """
+        base = active_class_list()
+        for k in self.mapping.keys():       # 현재 모델에 없어도 기존 설정은 보존
+            if k not in base:
+                base.append(k)
+        return base
 
     # ---------- 레이아웃 ----------
     def _build(self):
@@ -299,6 +315,8 @@ class ActionEditor(ttk.Frame):
         self.groups = []
         self.mp3_items = mp3_library.list_mp3()
         self.mapping = load_actions()
+        self.all_objects = self._object_base()      # 현재 모델 클래스로 갱신
+        self._obj_num = {o: i + 1 for i, o in enumerate(self.all_objects)}
         self._load_existing()
 
     def _add_selected(self):

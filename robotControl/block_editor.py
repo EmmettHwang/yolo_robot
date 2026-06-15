@@ -195,7 +195,8 @@ class BlockEditor(ttk.Frame):
                 pass
 
     def _all_objects(self):
-        base = list(COCO_CLASSES)
+        # 객체 목록 = 현재 모델(active.names)의 클래스 + 기존 프로그램의 객체
+        base = object_actions.active_class_list()
         for k in self.program:
             if k not in base:
                 base.append(k)
