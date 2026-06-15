@@ -52,6 +52,11 @@ def _class_choices():
     return load_classes()
 
 
+def _recent(cls):
+    """최근 40장을 '새 사진이 맨 앞'으로 반환(스크롤 없이 방금 찍은 게 보이게)."""
+    return list(reversed(list_images(cls)[-40:]))
+
+
 def _save_one(img_rgb, cls, size):
     """프레임 1장을 클래스에 저장. (status, gallery_list 또는 None, classes) 반환.
 
@@ -74,7 +79,7 @@ def _save_one(img_rgb, cls, size):
         f.write(f"{cls_id} 0.5 0.5 1.0 1.0\n")
     total = sum(count_images(c) for c in classes)
     return (f"✓ '{cls}' {count_images(cls)}장 (전체 {total}장)",
-            list_images(cls)[-40:], classes)
+            _recent(cls), classes)
 
 
 def capture_one(cam_val, latest_val, cls, size):
@@ -106,7 +111,7 @@ def stream_tick(frame, running, cls, size):
 def show_gallery(cls):
     if not cls:
         return None
-    return list_images(cls)[-40:]
+    return _recent(cls)
 
 
 def init_view():
@@ -339,6 +344,20 @@ def _have_model():
     return os.path.exists(BEST_WEIGHTS)
 
 
+# 카메라의 녹화/녹음(record) 버튼 숨김(우리 버튼으로만 촬영)
+_CAM_CSS = """
+#datacam button[title*='ecord'], #datacam button[aria-label*='ecord'],
+#datacam button[title*='녹'],   #datacam button[aria-label*='녹'],
+#datacam .record-button { display: none !important; }
+"""
+# 촬영음(브라우저 Web Audio 짧은 비프)
+_BEEP_JS = ("() => { try { const c = new (window.AudioContext || "
+            "window.webkitAudioContext)(); const o = c.createOscillator(); "
+            "const g = c.createGain(); o.type='sine'; o.frequency.value=880; "
+            "g.gain.value=0.15; o.connect(g); g.connect(c.destination); "
+            "o.start(); o.stop(c.currentTime + 0.09); } catch(e) {} }")
+
+
 def build():
     with gr.Blocks(title="로봇 인공지능 학습센터") as demo:
         gr.Markdown("# 🧠 로봇 인공지능 학습센터\n"
@@ -349,7 +368,7 @@ def build():
             with gr.Row():
                 with gr.Column():
                     cam = gr.Image(sources=["webcam"], streaming=True,
-                                   type="numpy",
+                                   type="numpy", elem_id="datacam",
                                    label="카메라 (허용하면 실시간 미리보기)",
                                    height=320)
                     latest = gr.State(None)      # 스트림 최신 프레임
@@ -438,17 +457,22 @@ def build():
         def _gate3():
             return gr.update(interactive=_have_model())
 
-        # 웹캠 스트림: 최신 프레임 보관 + 연속찍기 중이면 매 프레임 저장
+        # 웹캠 스트림: 최신 프레임 보관 + 연속찍기 중이면 매 프레임 저장(진행표시 숨김)
         cam.stream(stream_tick, [cam, running, cls_in, size_in],
-                   [latest, cap_status, gallery], stream_every=0.5)
-        # 📸 사진찍기(단발)
+                   [latest, cap_status, gallery], stream_every=0.5,
+                   show_progress="hidden")
+        # 📸 사진찍기(단발) — 저장 후 촬영음
         _cap_out = [cap_status, gallery, cls_dd, cls_in]
-        shot_btn.click(capture_one, [cam, latest, cls_in, size_in],
-                       _cap_out).then(_counts_md, None, counts).then(
-            _gate2, None, tab2)
-        # 🔴 연속찍기 시작 / ■ 중지
-        burst_btn.click(lambda: True, None, running)
-        stop_btn.click(lambda: False, None, running).then(
+        shot_btn.click(capture_one, [cam, latest, cls_in, size_in], _cap_out,
+                       show_progress="hidden").then(
+            _counts_md, None, counts).then(_gate2, None, tab2).then(
+            None, None, None, js=_BEEP_JS)
+        # 🔴 연속찍기 시작(시작음) / ■ 중지 — '0.1s' 진행표시 숨김
+        burst_btn.click(lambda: True, None, running,
+                        show_progress="hidden").then(None, None, None,
+                                                     js=_BEEP_JS)
+        stop_btn.click(lambda: False, None, running,
+                       show_progress="hidden").then(
             _counts_md, None, counts).then(_gate2, None, tab2)
         cls_dd.change(show_gallery, cls_dd, gallery)
         refresh_btn.click(lambda: (gr.update(choices=_class_choices()),
@@ -503,4 +527,4 @@ if __name__ == "__main__":
     # 수집 이미지(dataset/)·결과 그래프(runs/)를 갤러리에서 보여주려면 경로 허용 필요.
     # inbrowser=True 로 자동으로 브라우저를 열어 바로 테스트할 수 있게 한다.
     build().launch(server_name=host, server_port=port, inbrowser=True,
-                   allowed_paths=[ROOT])
+                   allowed_paths=[ROOT], css=_CAM_CSS)

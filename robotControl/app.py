@@ -39,6 +39,25 @@ import project
 
 PY = sys.executable
 WIN_STATE = os.path.join(DATA_DIR, "window.json")   # 메인 윈도 위치/크기 기억
+FLOW_FLAGS = os.path.join(DATA_DIR, "ui_flags.json")  # 자동 진행 체크박스 상태
+
+
+def _load_flow_flags():
+    try:
+        with open(FLOW_FLAGS, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_flow_flags(auto_dev, auto_yolo):
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(FLOW_FLAGS, "w", encoding="utf-8") as f:
+            json.dump({"auto_dev": bool(auto_dev),
+                       "auto_yolo": bool(auto_yolo)}, f)
+    except Exception:
+        pass
 BG = "#f4f6fa"
 HEADER_BG = "#1e2a4a"
 ACCENT = "#1565c0"
@@ -176,8 +195,11 @@ class App:
         self._web_proc = None
         self._base_proc = None        # 기본 모델 가져오기 서브프로세스
         # 자동 진행 옵션 (체크박스)
-        self.auto_dev = tk.BooleanVar(value=True)    # 설정 후 자동 이동
-        self.auto_yolo = tk.BooleanVar(value=False)  # 모델 준비 후 자동 이동
+        _flags = _load_flow_flags()                  # 저장된 자동 진행 옵션 복원
+        self.auto_dev = tk.BooleanVar(
+            value=bool(_flags.get("auto_dev", True)))    # 설정 후 자동 이동
+        self.auto_yolo = tk.BooleanVar(
+            value=bool(_flags.get("auto_yolo", False)))  # 모델 준비 후 자동 이동
         # 항상 위(코딩하면서 카메라를 볼 수 있게) — 기본 ON
         self.always_top = tk.BooleanVar(value=True)
 
@@ -243,6 +265,10 @@ class App:
                 self.action_editor._autosave()
         except Exception:
             pass
+
+    def _persist_flags(self):
+        """자동 진행 체크박스(장치 3초 자동이동 / 모델 준비 후 자동이동) 상태 저장."""
+        _save_flow_flags(self.auto_dev.get(), self.auto_yolo.get())
 
     def _set_project(self, name):
         self._cur_project = name
@@ -775,7 +801,7 @@ class App:
             width=18, command=lambda: self.nb.select(self.tab_train))
         self.dev_next.pack(side="left", padx=6)
         tk.Checkbutton(f, text="설정 창 닫으면 3초 후 자동으로 다음 단계로",
-                       variable=self.auto_dev, bg=BG,
+                       variable=self.auto_dev, bg=BG, command=self._persist_flags,
                        font=("Malgun Gothic", 9)).pack(pady=(8, 0))
         return f
 
@@ -833,13 +859,13 @@ class App:
         tk.Button(btns, text="↻ 모델 새로고침", bg=ACCENT,
                   command=self._reload_model, **_BTN).pack(side="left", padx=5)
         self.train_next = tk.Button(
-            btns, text="다음 → 자율활동시작 ▶", bg="#9e9e9e",
-            state="disabled", command=lambda: self.nb.select(self.rec_view),
+            btns, text="다음 → 프로그래밍 ▶", bg="#9e9e9e",
+            state="disabled", command=lambda: self.nb.select(self.tab_act),
             **{**_BTN, "width": 18})
         self.train_next.pack(side="left", padx=5)
 
-        tk.Checkbutton(f, text="모델 준비되면 자동으로 자율활동시작 단계로 이동",
-                       variable=self.auto_yolo, bg=BG,
+        tk.Checkbutton(f, text="모델 준비되면 자동으로 프로그래밍 단계로 이동",
+                       variable=self.auto_yolo, bg=BG, command=self._persist_flags,
                        font=("Malgun Gothic", 9)).pack(pady=(6, 0))
         tk.Label(f, text="※ 학습은 CPU라 느립니다. 클래스당 20~50장, 에폭 10~30 권장.",
                  font=("Malgun Gothic", 9), fg="#999", bg=BG).pack(pady=(8, 0))
@@ -849,31 +875,30 @@ class App:
     def _tab_actions(self, nb):
         f = ttk.Frame(nb)
 
-        # 프로젝트 툴바 (저장/불러오기/새로 만들기 + 현재 프로젝트 표시)
-        topbar = tk.Frame(f, bg="#eef2fb"); topbar.pack(fill="x")
-        tk.Label(topbar, text="📁 프로젝트:", bg="#eef2fb",
+        # 프로젝트 툴바 — 위쪽에 배치(버튼 순서/크기/모양 통일)
+        bar = tk.Frame(f, bg="#eef2fb")
+        bar.pack(side="top", fill="x")
+        tk.Label(bar, text="📁 프로젝트:", bg="#eef2fb",
                  font=("Malgun Gothic", 10, "bold")).pack(side="left",
                                                           padx=(10, 4), pady=6)
-        self.proj_label = tk.Label(topbar, text="(저장 안 됨)", bg="#eef2fb",
+        self.proj_label = tk.Label(bar, text="(저장 안 됨)", bg="#eef2fb",
                                    font=("Malgun Gothic", 10, "bold"),
                                    fg="#1565c0")
         self.proj_label.pack(side="left")
-        tk.Button(topbar, text="📂 불러오기", bg="#607d8b", fg="white",
-                  relief="flat", cursor="hand2",
-                  font=("Malgun Gothic", 9, "bold"),
-                  command=self._project_open).pack(side="right", padx=(4, 10),
-                                                   pady=4)
-        tk.Button(topbar, text="💾 이름으로 저장", bg="#28a745", fg="white",
-                  relief="flat", cursor="hand2",
-                  font=("Malgun Gothic", 9, "bold"),
-                  command=self._project_save_as).pack(side="right", padx=4,
-                                                      pady=4)
-        tk.Button(topbar, text="🆕 새 프로젝트", relief="flat", cursor="hand2",
-                  font=("Malgun Gothic", 9),
-                  command=self._project_new).pack(side="right", padx=4, pady=4)
+        pbtns = tk.Frame(bar, bg="#eef2fb"); pbtns.pack(side="right", padx=8,
+                                                        pady=5)
+        _PB = dict(font=("Malgun Gothic", 10, "bold"), relief="flat",
+                   cursor="hand2", fg="white", width=12)
+        # 순서: 새 프로젝트 / 불러오기 / 저장(이름을 물어 저장)
+        tk.Button(pbtns, text="🆕 새 프로젝트", bg="#607d8b",
+                  command=self._project_new, **_PB).pack(side="left", padx=3)
+        tk.Button(pbtns, text="📂 불러오기", bg="#1565c0",
+                  command=self._project_open, **_PB).pack(side="left", padx=3)
+        tk.Button(pbtns, text="💾 저장", bg="#28a745",
+                  command=self._project_save_as, **_PB).pack(side="left", padx=3)
 
         sub = ttk.Notebook(f)
-        sub.pack(fill="both", expand=True, padx=2, pady=2)
+        sub.pack(side="top", fill="both", expand=True, padx=2, pady=2)
 
         # ③-1  액션스크립터 (기존 ActionEditor 표)
         tab_table = ttk.Frame(sub)
@@ -1262,7 +1287,7 @@ class App:
             current = None
         if current is self.tab_train and self.auto_yolo.get():
             self.root.after(700, lambda: self._animate_press(
-                self.train_next, lambda: self.nb.select(self.rec_view)))
+                self.train_next, lambda: self.nb.select(self.tab_act)))
 
     def _show_manual(self):
         import manual
