@@ -408,12 +408,98 @@ class App:
                  font=("Malgun Gothic", 9), fg="#999", bg=BG).pack(pady=(8, 0))
         return f
 
-    # ---------- 탭: 객체 반응 ----------
+    # ---------- 탭: 객체 반응 (표 / 블록 / 파이썬 3-탭) ----------
     def _tab_actions(self, nb):
         f = ttk.Frame(nb)
-        editor = ActionEditor(f, class_names=trainer.load_classes())
-        editor.pack(fill="both", expand=True)
+        sub = ttk.Notebook(f)
+        sub.pack(fill="both", expand=True, padx=2, pady=2)
+
+        # ③-1  표 코딩 (기존 ActionEditor)
+        tab_table = ttk.Frame(sub)
+        self.action_editor = ActionEditor(
+            tab_table, class_names=trainer.load_classes())
+        self.action_editor.pack(fill="both", expand=True)
+        sub.add(tab_table, text="  📋 표 코딩  ")
+
+        # ③-2  블록 코딩 (다음 단계에서 캔버스 드래그형으로 구현)
+        tab_block = ttk.Frame(sub)
+        tk.Label(tab_block,
+                 text="🧩 블록 코딩 (캔버스 드래그형) — 준비 중\n"
+                      "표 코딩과 같은 데이터를 블록으로 편집하게 됩니다.",
+                 font=("Malgun Gothic", 13, "bold"), fg="#888",
+                 justify="center").pack(expand=True)
+        sub.add(tab_block, text="  🧩 블록 코딩  ")
+
+        # ③-3  파이썬 코드 (보기 전용, 탭 열 때 자동 생성)
+        tab_py = ttk.Frame(sub)
+        self._build_python_tab(tab_py)
+        sub.add(tab_py, text="  🐍 파이썬 코드  ")
+
+        self._act_sub = sub
+        self._act_tab_py = tab_py
+        sub.bind("<<NotebookTabChanged>>", self._on_act_sub_changed)
         return f
+
+    def _build_python_tab(self, parent):
+        bar = tk.Frame(parent, bg=BG); bar.pack(fill="x", padx=8, pady=(8, 0))
+        tk.Label(bar, text="🐍 생성된 파이썬 코드  (보기 전용 · 표/블록을 바꾸면 자동 갱신)",
+                 font=("Malgun Gothic", 11, "bold"), bg=BG).pack(side="left")
+        tk.Button(bar, text="📋 복사", cursor="hand2", relief="flat",
+                  bg="#607d8b", fg="white",
+                  command=self._copy_python_code).pack(side="right")
+        tk.Button(bar, text="↻ 새로고침", cursor="hand2", relief="flat",
+                  command=self._refresh_python_code).pack(side="right",
+                                                          padx=(0, 6))
+        wrap = tk.Frame(parent); wrap.pack(fill="both", expand=True,
+                                           padx=8, pady=8)
+        self.py_text = tk.Text(wrap, font=("Consolas", 11), wrap="none",
+                               bg="#1e1e1e", fg="#dcdcdc", relief="flat",
+                               insertbackground="#dcdcdc", padx=10, pady=8,
+                               state="disabled")
+        ysb = ttk.Scrollbar(wrap, orient="vertical",
+                            command=self.py_text.yview)
+        xsb = ttk.Scrollbar(wrap, orient="horizontal",
+                            command=self.py_text.xview)
+        self.py_text.configure(yscrollcommand=ysb.set, xscrollcommand=xsb.set)
+        self.py_text.grid(row=0, column=0, sticky="nsew")
+        ysb.grid(row=0, column=1, sticky="ns")
+        xsb.grid(row=1, column=0, sticky="ew")
+        wrap.grid_rowconfigure(0, weight=1)
+        wrap.grid_columnconfigure(0, weight=1)
+
+    def _refresh_python_code(self):
+        try:
+            import code_gen
+            src = code_gen.generate_python()
+        except Exception as e:
+            src = f"# 코드 생성 오류: {e}"
+        try:
+            self.py_text.config(state="normal")
+            self.py_text.delete("1.0", "end")
+            self.py_text.insert("1.0", src)
+            self.py_text.config(state="disabled")
+        except Exception:
+            pass
+
+    def _copy_python_code(self):
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(self.py_text.get("1.0", "end-1c"))
+        except Exception:
+            pass
+
+    def _on_act_sub_changed(self, _evt):
+        try:
+            cur = self._act_sub.nametowidget(self._act_sub.select())
+        except Exception:
+            return
+        if cur is self._act_tab_py:
+            # 표/블록의 최신 편집을 파일로 저장 후 코드 재생성(단일 데이터 소스)
+            try:
+                self.action_editor._autosave()
+            except Exception:
+                pass
+            self._refresh_python_code()
 
     # ============================================================
     # 시퀀스 흐름
