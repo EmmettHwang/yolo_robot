@@ -120,6 +120,7 @@ class BlockEditor(ttk.Frame):
         super().__init__(master, **kw)
         self.on_change = on_change
         self.program = {}              # {label: [step, ...]}
+        self.sel = None                # 현재 편집 중인 객체(하나만 표시)
         self.mp3_items = mp3_library.list_mp3()
         self._blocks = []              # 화면 블록 메타
         self._stacks = []              # 스택 기하(드롭 계산용)
@@ -131,22 +132,33 @@ class BlockEditor(ttk.Frame):
     # UI
     # ============================================================
     def _build(self):
-        bar = tk.Frame(self); bar.pack(fill="x", padx=8, pady=(8, 4))
+        bar = tk.Frame(self); bar.pack(fill="x", padx=8, pady=(8, 2))
         tk.Label(bar, text="🧩 블록 코딩", font=("Malgun Gothic", 13, "bold")
                  ).pack(side="left")
-        tk.Label(bar, text="  ≡ 드래그=순서·객체 이동 · ✎ 편집(또는 더블클릭)",
-                 font=("Malgun Gothic", 9), fg="#888").pack(side="left")
-
-        tk.Label(bar, text="객체 추가:", font=("Malgun Gothic", 9)).pack(
+        # 편집할 객체 1개 선택 → 그 객체의 반응만 표시/편집
+        tk.Label(bar, text="객체:", font=("Malgun Gothic", 10, "bold")).pack(
             side="left", padx=(16, 2))
+        self.sel_var = tk.StringVar()
+        self.sel_combo = ttk.Combobox(bar, textvariable=self.sel_var,
+                                      state="readonly", width=22)
+        self.sel_combo.pack(side="left", padx=(0, 4))
+        self.sel_combo.bind("<<ComboboxSelected>>", lambda e: self._on_sel())
+        tk.Button(bar, text="🗑 객체 삭제", cursor="hand2", relief="flat",
+                  fg="#c62828", command=self._del_selected).pack(side="left")
+
+        bar2 = tk.Frame(self); bar2.pack(fill="x", padx=8, pady=(0, 4))
+        tk.Label(bar2, text="＋ 객체 추가:", font=("Malgun Gothic", 9)).pack(
+            side="left", padx=(0, 2))
         self.add_var = tk.StringVar()
-        self.add_combo = ttk.Combobox(bar, textvariable=self.add_var,
+        self.add_combo = ttk.Combobox(bar2, textvariable=self.add_var,
                                       state="readonly", width=20)
         self.add_combo.pack(side="left", padx=(0, 4))
-        tk.Button(bar, text="＋ 객체", bg="#1565c0", fg="white", relief="flat",
+        tk.Button(bar2, text="＋ 추가", bg="#1565c0", fg="white", relief="flat",
                   cursor="hand2", command=self._add_object).pack(side="left")
-        tk.Button(bar, text="↻ 새로고침", cursor="hand2",
+        tk.Button(bar2, text="↻ 새로고침", cursor="hand2",
                   command=self.reload).pack(side="left", padx=(8, 0))
+        tk.Label(bar2, text="  ≡ 드래그=순서 변경 · ✎ 편집(또는 더블클릭)",
+                 font=("Malgun Gothic", 9), fg="#888").pack(side="left")
 
         wrap = tk.Frame(self); wrap.pack(fill="both", expand=True,
                                          padx=8, pady=(0, 8))
@@ -176,7 +188,10 @@ class BlockEditor(ttk.Frame):
         mapping = load_actions()
         self.program = {lbl: [dict(s) for s in steps_of(act)]
                         for lbl, act in mapping.items()}
+        if self.sel not in self.program:
+            self.sel = next(iter(self.program), None)
         self._refresh_add_combo()
+        self._refresh_sel_combo()
         self.render()
 
     def _save(self):
@@ -215,12 +230,42 @@ class BlockEditor(ttk.Frame):
         else:
             self.add_var.set("(모든 객체 추가됨)")
 
+    def _refresh_sel_combo(self):
+        """편집할 객체 선택 드롭다운 — 반응이 있는 객체들."""
+        objs = list(self.program.keys())
+        self._sel_disp = {obj_label(o, self._obj_num.get(o, "?")): o
+                          for o in objs}
+        self.sel_combo["values"] = list(self._sel_disp)
+        if self.sel in self.program:
+            for d, o in self._sel_disp.items():
+                if o == self.sel:
+                    self.sel_combo.set(d)
+                    break
+        elif objs:
+            self.sel = objs[0]
+            self.sel_combo.current(0)
+        else:
+            self.sel = None
+            self.sel_combo.set("(객체 없음 — 아래에서 추가)")
+
+    def _on_sel(self):
+        obj = self._sel_disp.get(self.sel_combo.get())
+        if obj:
+            self.sel = obj
+            self.render()
+
+    def _del_selected(self):
+        if self.sel:
+            self._del_object(self.sel)
+
     def _add_object(self):
         obj = self._disp_to_name.get(self.add_var.get().strip())
         if not obj or obj in self.program:
             return
         self.program[obj] = [_blank_step()]
+        self.sel = obj                       # 추가한 객체를 바로 편집
         self._refresh_add_combo()
+        self._refresh_sel_combo()
         self.render()
         self._save()
 
@@ -238,13 +283,19 @@ class BlockEditor(ttk.Frame):
             steps.pop(idx)
         if not steps:                 # 스텝이 없으면 객체도 제거
             self.program.pop(label, None)
+            if self.sel == label:
+                self.sel = next(iter(self.program), None)
             self._refresh_add_combo()
+            self._refresh_sel_combo()
         self.render()
         self._save()
 
     def _del_object(self, label):
         self.program.pop(label, None)
+        if self.sel == label:
+            self.sel = next(iter(self.program), None)
         self._refresh_add_combo()
+        self._refresh_sel_combo()
         self.render()
         self._save()
 
@@ -261,30 +312,28 @@ class BlockEditor(ttk.Frame):
         self._stacks = []
         self.canvas.delete("all")
 
-        if not self.program:
+        if not self.program or self.sel not in self.program:
             self.canvas.create_text(
                 MARGIN + 220, 80, anchor="w", fill="#999",
                 font=("Malgun Gothic", 12),
-                text="위 ‘＋ 객체’로 객체를 추가하고, 블록을 쌓아 보세요.")
+                text="‘＋ 객체 추가’로 객체를 더하고, 위 ‘객체’에서 골라 편집하세요.")
             self.canvas.configure(scrollregion=(0, 0, 600, 200))
             return
 
-        max_h = 0
-        for col, (label, steps) in enumerate(self.program.items()):
-            x = MARGIN + col * (COL_W + COL_GAP)
-            self._draw_hat(label, steps, x)
-            first_y = MARGIN + HAT_H + BLK_GAP
-            for j, step in enumerate(steps):
-                self._draw_block(label, j, step, x, first_y + j * SLOT)
-            add_y = first_y + len(steps) * SLOT
-            self._draw_add(label, len(steps), x, add_y)
-            self._stacks.append({"label": label, "x0": x, "first_y": first_y,
-                                 "count": len(steps)})
-            max_h = max(max_h, add_y + 40)
-
-        total_w = MARGIN + len(self.program) * (COL_W + COL_GAP)
-        self.canvas.configure(scrollregion=(0, 0, max(total_w, 600),
-                                            max(max_h, 200)))
+        # 선택된 객체 하나만 표시
+        label = self.sel
+        steps = self.program[label]
+        x = MARGIN
+        self._draw_hat(label, steps, x)
+        first_y = MARGIN + HAT_H + BLK_GAP
+        for j, step in enumerate(steps):
+            self._draw_block(label, j, step, x, first_y + j * SLOT)
+        add_y = first_y + len(steps) * SLOT
+        self._draw_add(label, len(steps), x, add_y)
+        self._stacks = [{"label": label, "x0": x, "first_y": first_y,
+                         "count": len(steps)}]
+        self.canvas.configure(scrollregion=(0, 0, max(COL_W + 2 * MARGIN, 600),
+                                            max(add_y + 40, 200)))
 
     def _draw_hat(self, label, steps, x):
         kr = coco_kr(label)
