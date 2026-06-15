@@ -1,7 +1,7 @@
 # coding: utf-8
 """
-yolo.py  (gradio 브랜치, v4.0~)
-==============================
+yolo.py
+=======
 YOLO 추론 래퍼 — **OpenCV DNN(ONNX)** 기반. torch/ultralytics 불필요(경량).
 
 - 모델: model/active.onnx (+ model/active.names 클래스명)

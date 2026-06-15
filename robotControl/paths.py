@@ -51,7 +51,7 @@ MODELS_DIR = os.path.join(BASE, "models")         # 가중치/ONNX: ./models
 ACTIVE_MODEL = os.path.join(MODELS_DIR, "active.pt")
 ACTIVE_NAME = os.path.join(MODELS_DIR, "active.name")   # active 의 원본 모델 이름
 BASE_WEIGHTS = os.path.join(MODELS_DIR, "yolov5su.pt")  # ultralytics 기본 가중치(model/)
-# ── gradio 브랜치(v4.0~): 런타임 추론은 OpenCV DNN(ONNX) ──
+# ── 런타임 추론은 OpenCV DNN(ONNX) — torch 불필요 ──
 ACTIVE_ONNX = os.path.join(MODELS_DIR, "active.onnx")        # 인식에 쓰는 ONNX
 ACTIVE_CLASSES = os.path.join(MODELS_DIR, "active.names")    # 클래스명(한 줄당 1개)
 BASE_ONNX = os.path.join(MODELS_DIR, "yolov5su.onnx")        # 기본 ONNX
