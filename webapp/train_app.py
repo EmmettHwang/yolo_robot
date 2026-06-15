@@ -85,19 +85,21 @@ def _save_one(img_rgb, cls, size):
 def do_capture(frame, cls, size):
     """웹캠 촬영(셔터) → cam.input 으로 호출. 캡처된 스냅샷 프레임을 저장.
 
-    스냅샷 모드에서는 이 콜백이 '실제 캡처된 이미지'를 받으므로 확실히 저장된다.
-    outputs: cap_status, gallery, counts, cls_dd, cls_in
+    저장 후 카메라 값을 비워(None) 라이브 미리보기로 되돌린다 → 연속 촬영 가능.
+    outputs: cam, cap_status, gallery, counts, cls_dd, cls_in
     """
     cls = (cls or "").strip()
     if frame is None:
-        return gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip()
+        return (gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(),
+                gr.skip())
     if not cls:
-        return ("클래스 이름을 입력하거나 기존 이름을 골라 주세요.",
+        # 클래스 미정이어도 카메라는 라이브로 되돌림
+        return (None, "클래스 이름을 입력하거나 기존 이름을 골라 주세요.",
                 gr.skip(), gr.skip(), gr.skip(), gr.skip())
     status, gal, classes = _save_one(frame, cls, size)
     upd = gr.update(choices=classes, value=cls)
-    return (status, gal if gal is not None else gr.skip(),
-            _counts_md(), upd, upd)
+    return (None, status, gal if gal is not None else gr.skip(),
+            _counts_md(), upd, upd)               # cam=None → 라이브 복귀
 
 
 def start_burst():
@@ -471,9 +473,9 @@ def build():
         def _gate3():
             return gr.update(interactive=_have_model())
 
-        # 웹캠 촬영(셔터) → 실제 저장. 저장 후 셔터음.
+        # 웹캠 촬영(셔터) → 저장 + 카메라 라이브 복귀(None) + 셔터음
         cam.input(do_capture, [cam, cls_in, size_in],
-                  [cap_status, gallery, counts, cls_dd, cls_in],
+                  [cam, cap_status, gallery, counts, cls_dd, cls_in],
                   show_progress="hidden").then(_gate2, None, tab2).then(
             None, None, None, js=_SHUTTER_JS)
         # 📸 사진찍기 = 웹캠 셔터를 한 번 누름(→ cam.input 저장)
