@@ -35,6 +35,40 @@ import voice_chat
 MAX_STEPS = 5
 NONE_MOTION = "(없음)"
 
+# ❓ 만약(조건) — A단계 프리셋. (key, 표시이름)
+CONDITIONS = [
+    ("always", "항상"),
+    ("conf90", "신뢰도 90%↑"),
+    ("conf70", "신뢰도 70%↑"),
+    ("rand50", "확률 50%"),
+    ("rand30", "확률 30%"),
+    ("count2", "같은 객체 2개↑"),
+    ("count3", "같은 객체 3개↑"),
+    ("day", "낮(06–18시)"),
+    ("night", "밤(18–06시)"),
+]
+COND_KEY2LABEL = dict(CONDITIONS)
+COND_LABEL2KEY = {lb: k for k, lb in CONDITIONS}
+
+
+def eval_condition(key, conf=1.0, count=1) -> bool:
+    """스텝 실행 조건 평가. ctx: conf(신뢰도), count(같은 객체 수)."""
+    import random as _r
+    import datetime as _dt
+    if not key or key == "always":
+        return True
+    h = _dt.datetime.now().hour
+    return {
+        "conf90": conf >= 0.90,
+        "conf70": conf >= 0.70,
+        "rand50": _r.random() < 0.50,
+        "rand30": _r.random() < 0.30,
+        "count2": count >= 2,
+        "count3": count >= 3,
+        "day": 6 <= h < 18,
+        "night": not (6 <= h < 18),
+    }.get(key, True)
+
 
 def obj_label(name: str, num=None) -> str:
     """객체 이름에 번호 + 한글 번역 병기.
@@ -64,6 +98,8 @@ def _normalize(entry: dict) -> dict:
             "sound_kind": s.get("sound_kind", snd.NONE),
             "sound_value": s.get("sound_value", ""),
             "duration": s.get("duration"),
+            "repeat": int(s.get("repeat", 1) or 1),   # 🔁 반복 횟수
+            "cond": s.get("cond", "always"),           # ❓ 만약(조건) 키
         })
     return {"steps": steps}
 
@@ -362,6 +398,25 @@ class ActionEditor(ttk.Frame):
         de.bind("<FocusOut>", lambda e: self._autosave())
         step["dur_var"] = dv
 
+        # 🔁 반복 횟수
+        repwrap = tk.Frame(fr, bg="#fbfcff"); repwrap.pack(side="left",
+                                                           padx=(8, 0))
+        tk.Label(repwrap, text="🔁", bg="#fbfcff").pack(side="left")
+        rv = tk.IntVar(value=int(data.get("repeat", 1) or 1))
+        tk.Spinbox(repwrap, from_=1, to=10, width=2, textvariable=rv,
+                   command=self._autosave).pack(side="left")
+        step["repeat_var"] = rv
+
+        # ❓ 만약(조건)
+        tk.Label(fr, text="❓", bg="#fbfcff").pack(side="left", padx=(8, 0))
+        cvar = tk.StringVar(value=COND_KEY2LABEL.get(
+            data.get("cond", "always"), "항상"))
+        cc = ttk.Combobox(fr, textvariable=cvar, state="readonly", width=11,
+                          values=[lb for _, lb in CONDITIONS])
+        cc.pack(side="left")
+        cc.bind("<<ComboboxSelected>>", lambda e: self._autosave())
+        step["cond_var"] = cvar
+
         # 순서 이동 ▲/▼
         tk.Button(fr, text="▲", width=2, cursor="hand2", relief="flat",
                   command=lambda g=group, s=step: self._move_step(g, s, -1)
@@ -477,6 +532,15 @@ class ActionEditor(ttk.Frame):
                             entry["duration"] = d
                     except Exception:
                         pass
+                try:
+                    rep = int(st["repeat_var"].get())
+                    if rep > 1:
+                        entry["repeat"] = rep
+                except Exception:
+                    pass
+                cond = COND_LABEL2KEY.get(st["cond_var"].get(), "always")
+                if cond != "always":
+                    entry["cond"] = cond
                 steps.append(entry)
             if steps:
                 result[g["obj"]] = {"steps": steps}

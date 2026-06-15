@@ -474,12 +474,14 @@ class RecognitionView(ttk.Frame):
             with self._lock:
                 self._frame = frame
 
-    def _log_sequence(self, label, conf, seq):
+    def _log_sequence(self, label, conf, seq, count=1, skipped=0):
         """반응 시퀀스를 로그 박스에 표시."""
         kr = coco_kr(label)
         name = f"{label} ({kr})" if kr else label
-        self._log(f"[{_clock(time.time())}] 🎯 {name} {conf*100:.0f}% → 반응 "
-                  f"({len(seq)}단계)")
+        extra = f", {count}개" if count > 1 else ""
+        extra += f", 조건 미충족 {skipped}개 건너뜀" if skipped else ""
+        self._log(f"[{_clock(time.time())}] 🎯 {name} {conf*100:.0f}%{extra} "
+                  f"→ 반응 ({len(seq)}단계)")
         skinds = {snd.MP3: "MP3", snd.TTS: "TTS", snd.RANDOM: "랜덤음",
                   snd.NONE: ""}
         for i, st in enumerate(seq, 1):
@@ -515,11 +517,15 @@ class RecognitionView(ttk.Frame):
         return None
 
     def _handle_triggers(self, dets):
-        top_label, top_conf = "", 0.0
+        top_label, top_conf, top_cid = "", 0.0, -1
         for det in dets:
             conf = float(det[4]); cid = int(det[5])
             if conf > top_conf:
-                top_conf = conf; top_label = self.model.names[cid]
+                top_conf = conf; top_cid = cid
+                top_label = self.model.names[cid]
+        # 같은 클래스 객체 수(조건 'count' 평가용)
+        count = sum(1 for det in dets if int(det[5]) == top_cid) if top_cid >= 0 \
+            else 0
 
         now = time.time()
         busy = bool(self.runner and self.runner.busy)
@@ -531,17 +537,30 @@ class RecognitionView(ttk.Frame):
             if act:
                 steps = object_actions.steps_of(act)
                 seq = []
+                skipped = 0
                 for st in steps:
-                    seq.append({
+                    # ❓ 만약(조건): 거짓이면 이 스텝 건너뜀
+                    cond = st.get("cond", "always")
+                    if not object_actions.eval_condition(
+                            cond, conf=top_conf, count=count):
+                        skipped += 1
+                        continue
+                    one = {
                         "motion": st.get("motion"),
                         "hold": self._resolve_hold(st),
                         "sound_kind": st.get("sound_kind", snd.NONE),
                         "sound_value": st.get("sound_value", ""),
-                    })
+                    }
+                    rep = max(1, int(st.get("repeat", 1) or 1))   # 🔁 반복
+                    for _ in range(rep):
+                        seq.append(dict(one))
                 # 서브 동작 시퀀스 실행(LED+모션+사운드, 동작중지로 취소 가능)
                 if seq and self.runner:
                     self.runner.action_sequence(seq, sound_on=self.sound_on)
-                    self._log_sequence(top_label, top_conf, seq)
+                    self._log_sequence(top_label, top_conf, seq, count, skipped)
+                elif skipped:
+                    self._log(f"[{_clock(now)}] {top_label}: 조건 불충족으로 "
+                              f"실행할 동작 없음")
                 self._last_acted = top_label
                 self._last_trigger = now
 
