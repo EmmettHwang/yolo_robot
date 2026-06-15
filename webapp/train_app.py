@@ -97,15 +97,19 @@ def capture_one(cam_val, latest_val, cls, size):
     return status, (gal if gal is not None else gr.update()), upd, upd
 
 
-def stream_tick(frame, running, cls, size):
-    """웹캠 스트림: 최신 프레임을 State 에 보관 + 연속찍기 중이면 매 프레임 저장."""
-    if frame is None:
-        return None, gr.update(), gr.update()
+def keep_latest(frame):
+    """웹캠 스트림: 최신 프레임만 State 에 보관(갤러리는 건드리지 않음 → 덮어쓰기 방지)."""
+    return frame
+
+
+def burst_tick(cam_val, latest_val, cls, size):
+    """🔴 연속찍기: Timer 가 약 0.5초마다 호출 → 현재 프레임 1장 저장 + 갤러리 갱신."""
+    img = cam_val if cam_val is not None else latest_val
     cls = (cls or "").strip()
-    if running and cls:
-        status, gal, _ = _save_one(frame, cls, size)
-        return frame, status, (gal if gal is not None else gr.update())
-    return frame, gr.update(), gr.update()
+    if img is None or not cls:
+        return gr.skip(), gr.skip()
+    status, gal, _ = _save_one(img, cls, size)
+    return "🔴 연속 촬영 중 · " + status, (gal if gal is not None else gr.skip())
 
 
 def show_gallery(cls):
@@ -350,12 +354,17 @@ _CAM_CSS = """
 #datacam button[title*='녹'],   #datacam button[aria-label*='녹'],
 #datacam .record-button { display: none !important; }
 """
-# 촬영음(브라우저 Web Audio 짧은 비프)
-_BEEP_JS = ("() => { try { const c = new (window.AudioContext || "
-            "window.webkitAudioContext)(); const o = c.createOscillator(); "
-            "const g = c.createGain(); o.type='sine'; o.frequency.value=880; "
-            "g.gain.value=0.15; o.connect(g); g.connect(c.destination); "
-            "o.start(); o.stop(c.currentTime + 0.09); } catch(e) {} }")
+# 촬영음(브라우저 Web Audio — 카메라 셔터처럼 짧게 '챡' 하는 노이즈 버스트)
+_SHUTTER_JS = ("() => { try { const c = new (window.AudioContext || "
+               "window.webkitAudioContext)(); const n = Math.floor("
+               "c.sampleRate * 0.05); const b = c.createBuffer(1, n, "
+               "c.sampleRate); const d = b.getChannelData(0); for (let i=0; "
+               "i<n; i++){ d[i] = (Math.random()*2-1) * Math.pow(1 - i/n, 3); } "
+               "const s = c.createBufferSource(); s.buffer = b; const g = "
+               "c.createGain(); g.gain.value = 0.5; const f = "
+               "c.createBiquadFilter(); f.type='highpass'; f.frequency.value="
+               "1500; s.connect(f); f.connect(g); g.connect(c.destination); "
+               "s.start(); } catch(e) {} }")
 
 
 def build():
@@ -371,27 +380,27 @@ def build():
                                    type="numpy", elem_id="datacam",
                                    label="카메라 (허용하면 실시간 미리보기)",
                                    height=320)
-                    latest = gr.State(None)      # 스트림 최신 프레임
-                    running = gr.State(False)    # 연속찍기 진행 여부
+                    latest = gr.State(None)              # 스트림 최신 프레임
+                    timer = gr.Timer(0.5, active=False)  # 연속찍기 간격
                     with gr.Row():
+                        gr.Markdown("### 클래스")
                         cls_in = gr.Dropdown(
                             _class_choices(), allow_custom_value=True,
-                            label="클래스 이름 (새 이름 입력 또는 기존 선택)",
-                            scale=2)
-                        size_in = gr.Radio(SIZES, value=320, label="사진 크기")
+                            show_label=False, container=False, scale=3)
+                        size_in = gr.Radio(SIZES, value=320, label="사진 크기",
+                                           scale=2)
                     with gr.Row():
                         shot_btn = gr.Button("📸 사진찍기", variant="primary")
                         burst_btn = gr.Button("🔴 연속찍기")
                         stop_btn = gr.Button("■ 중지", variant="stop")
                     cap_status = gr.Markdown("")
-                    gr.Markdown(
-                        "**📸 사진찍기**=1장 · **🔴 연속찍기**=약 0.5초마다 자동 저장 · "
-                        "**■ 중지**. 각도·거리를 바꿔 20~50장 모으면 좋아요. "
-                        "**기존 이름을 고르면 그 사진에 이어서 추가**됩니다.")
+                    gr.Markdown("📸 사진찍기=1장 · 🔴 연속찍기=약 0.5초마다 자동 저장 · "
+                                "■ 중지. 각도·거리를 바꿔 20~50장 모으면 좋아요.")
                 with gr.Column():
+                    gr.Markdown("**기존 이름을 고르면 그 사진에 이어서 추가됩니다.**")
                     cls_dd = gr.Dropdown(_class_choices(), label="모은 것 보기",
                                          interactive=True)
-                    gallery = gr.Gallery(label="모은 사진(최근 40장)",
+                    gallery = gr.Gallery(label="모은 사진 (최신순 미리보기)",
                                          columns=4, height=320)
                     with gr.Row():
                         refresh_btn = gr.Button("↻ 새로고침")
@@ -457,23 +466,24 @@ def build():
         def _gate3():
             return gr.update(interactive=_have_model())
 
-        # 웹캠 스트림: 최신 프레임 보관 + 연속찍기 중이면 매 프레임 저장(진행표시 숨김)
-        cam.stream(stream_tick, [cam, running, cls_in, size_in],
-                   [latest, cap_status, gallery], stream_every=0.5,
-                   show_progress="hidden")
-        # 📸 사진찍기(단발) — 저장 후 촬영음
+        # 웹캠 스트림: 최신 프레임만 State 에 보관(갤러리 안 건드림 → 덮어쓰기 방지)
+        cam.stream(keep_latest, cam, latest, show_progress="hidden")
+        # 📸 사진찍기(단발) — 저장 후 셔터음
         _cap_out = [cap_status, gallery, cls_dd, cls_in]
         shot_btn.click(capture_one, [cam, latest, cls_in, size_in], _cap_out,
                        show_progress="hidden").then(
             _counts_md, None, counts).then(_gate2, None, tab2).then(
-            None, None, None, js=_BEEP_JS)
-        # 🔴 연속찍기 시작(시작음) / ■ 중지 — '0.1s' 진행표시 숨김
-        burst_btn.click(lambda: True, None, running,
-                        show_progress="hidden").then(None, None, None,
-                                                     js=_BEEP_JS)
-        stop_btn.click(lambda: False, None, running,
+            None, None, None, js=_SHUTTER_JS)
+        # 🔴 연속찍기: Timer 켜기 / ■ 중지: Timer 끄기 ('0.1s' 진행표시 숨김)
+        burst_btn.click(lambda: gr.Timer(active=True), None, timer,
+                        show_progress="hidden")
+        stop_btn.click(lambda: gr.Timer(active=False), None, timer,
                        show_progress="hidden").then(
             _counts_md, None, counts).then(_gate2, None, tab2)
+        # Timer 틱마다 1장 저장 + 갤러리 갱신 + 셔터음(찍는 게 보이도록)
+        timer.tick(burst_tick, [cam, latest, cls_in, size_in],
+                   [cap_status, gallery], show_progress="hidden").then(
+            None, None, None, js=_SHUTTER_JS)
         cls_dd.change(show_gallery, cls_dd, gallery)
         refresh_btn.click(lambda: (gr.update(choices=_class_choices()),
                                    _counts_md(),
