@@ -330,7 +330,7 @@ def build():
                     with gr.Row():
                         cls_in = gr.Dropdown(
                             _class_choices(), allow_custom_value=True,
-                            label="무엇을 가르칠까요? (새 이름 입력 또는 기존 선택)",
+                            label="클래스 이름 (새 이름 입력 또는 기존 선택)",
                             scale=2)
                         size_in = gr.Radio(SIZES, value=320, label="사진 크기")
                     cap_btn = gr.Button("📸 사진 찍기 (현재 화면 저장)",
@@ -345,7 +345,7 @@ def build():
                                          columns=4, height=320)
                     with gr.Row():
                         refresh_btn = gr.Button("↻ 새로고침")
-                        del_btn = gr.Button("🗑 이 이름 지우기", variant="stop")
+                        del_btn = gr.Button("🗑 이 클래스 지우기", variant="stop")
                     counts = gr.Markdown(_counts_md())
 
         with gr.Tab("② 학습하기", interactive=_have_data()) as tab2:
