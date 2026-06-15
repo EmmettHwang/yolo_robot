@@ -2,11 +2,11 @@
 """
 main.py
 =======
-진입점. 실제 모듈들은 robot/ 폴더에 있고, 여기서 경로를 추가해 실행한다.
+진입점. 실제 모듈들은 robotControl/ 폴더에 있고, 여기서 경로를 추가해 실행한다.
 
 구조:
   main.py            - 진입점(루트)
-  robot/             - 기능 모듈 모음
+  robotControl/      - 기능 모듈 모음
     app.py             탭 메인 윈도우
     port_selector.py   포트/장치 설정 (독립 실행)
     trainer.py         로봇 학습 (독립 실행)
@@ -16,17 +16,19 @@ main.py
     sound.py / joystick.py / motion_grid.py
     protocol.py / robot_controller.py / yolo.py / hangul.py / paths.py
     pdf_viewer.py / manual.py / mp3_library.py / version.py
-  model/             - 가중치(yolov5s.pt, active.pt, 학습 결과)
-  assets/ dataset/ yolov5/ ...
+  models/            - 가중치(yolov5s.pt, active.pt, 학습 결과)
+  configData/        - 설정·매핑·창 상태 등
+  assets/ (images, mp3, protocol, ai_lecture, sounds) dataset/ yolov5/ ...
+  webapp/            - 로봇 인공지능 학습센터(Gradio) — 별도 실행
 """
 
 import os
 import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(ROOT, "robot"))
+sys.path.insert(0, os.path.join(ROOT, "robotControl"))
 
-from app import App   # noqa: E402  (robot/ 경로 추가 후 import)
+from app import App   # noqa: E402  (robotControl/ 경로 추가 후 import)
 
 if __name__ == "__main__":
     App().run()

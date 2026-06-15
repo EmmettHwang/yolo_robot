@@ -8,7 +8,6 @@ yolov5/
 
 # Weights / models (large binaries)
 *.pt
-model/
 models/
 
 # Generated training data / runs

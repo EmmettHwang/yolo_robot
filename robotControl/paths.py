@@ -10,8 +10,8 @@ paths.py
 
 import os
 
-# 이 파일(robot/paths.py)의 부모의 부모 = 프로젝트 루트
-ROBOT_DIR = os.path.dirname(os.path.abspath(__file__))
+# 이 파일(robotControl/paths.py)의 폴더 = 코드 폴더, 그 부모 = 프로젝트 루트
+ROBOT_DIR = os.path.dirname(os.path.abspath(__file__))   # = robotControl/
 BASE = os.path.dirname(ROBOT_DIR)
 
 ENV_FILE = os.path.join(BASE, ".env")
@@ -36,7 +36,7 @@ load_env()      # 모듈 import 시 자동 로드
 
 # 설정 / 데이터
 CONFIG_INI = os.path.join(BASE, "config.ini")
-DATA_DIR = os.path.join(BASE, "data")
+DATA_DIR = os.path.join(BASE, "configData")
 OBJECT_ACTIONS_JSON = os.path.join(DATA_DIR, "object_actions.json")
 MOTION_GRID_JSON = os.path.join(DATA_DIR, "motion_grid.json")
 PROJECTS_DIR = os.path.join(BASE, "projects")   # 인식및반응 프로젝트 저장 폴더
@@ -47,7 +47,7 @@ IMG_DIR = os.path.join(DATASET, "images", "train")
 LBL_DIR = os.path.join(DATASET, "labels", "train")
 CLASSES_TXT = os.path.join(DATASET, "classes.txt")
 DATA_YAML = os.path.join(DATASET, "data.yaml")
-MODELS_DIR = os.path.join(BASE, "model")          # 사용자 지정: ./model
+MODELS_DIR = os.path.join(BASE, "models")         # 가중치/ONNX: ./models
 ACTIVE_MODEL = os.path.join(MODELS_DIR, "active.pt")
 ACTIVE_NAME = os.path.join(MODELS_DIR, "active.name")   # active 의 원본 모델 이름
 BASE_WEIGHTS = os.path.join(MODELS_DIR, "yolov5su.pt")  # ultralytics 기본 가중치(model/)
@@ -64,9 +64,9 @@ ASSETS = os.path.join(BASE, "assets")
 SOUNDS_DIR = os.path.join(ASSETS, "sounds")   # (예약) 효과음 파일용
 MP3_DIR = os.path.join(ASSETS, "mp3")
 AI_LECTURE_DIR = os.path.join(ASSETS, "ai_lecture")   # 인공지능 학습 자료(PDF)
-# 이미지 → ./assets/image, PDF/프로토콜 → ./protocol
-IMAGE_DIR = os.path.join(ASSETS, "image")
-PROTOCOL_DIR = os.path.join(BASE, "protocol")
+# 이미지 → ./assets/images, PDF/프로토콜 → ./assets/protocol
+IMAGE_DIR = os.path.join(ASSETS, "images")
+PROTOCOL_DIR = os.path.join(ASSETS, "protocol")
 LOGO_PATH = os.path.join(IMAGE_DIR, "logo.png")
 MOTORMAP_PATH = os.path.join(IMAGE_DIR, "motorMap.png")
 MANUAL_PDF = os.path.join(PROTOCOL_DIR, "라인코어엠매뉴얼.pdf")

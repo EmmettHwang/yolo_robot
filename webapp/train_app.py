@@ -19,9 +19,9 @@ webapp/train_app.py  (로봇 인공지능 학습센터)
 import os
 import sys
 
-# 공용 모듈(paths, trainer, export_onnx)은 형제 폴더 robot/ 에 있다 → import 경로 추가
+# 공용 모듈(paths, trainer, export_onnx)은 형제 폴더 robotControl/ 에 있다 → import 경로 추가
 _ROBOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                      "robot")
+                      "robotControl")
 if _ROBOT not in sys.path:
     sys.path.insert(0, _ROBOT)
 
