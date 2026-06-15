@@ -494,47 +494,137 @@ class App:
         self._hide_wait_dialog()
         self._apply_topmost()
 
-    # ---------- 기본 모델(YOLO) 가져오기 ----------
-    def _import_base_model(self):
-        """기본 YOLO(yolov5su, COCO 80종)를 ONNX 로 받아 active 로 적용(서브프로세스)."""
+    # ---------- 모델 가져오기 (YOLO 기본 / 기존 .onnx / 학습 .pt 선택) ----------
+    def _import_model(self):
+        """적용할 모델을 고르는 대화상자 — 기본 YOLO + model/ 의 .onnx/.pt + 파일 찾기."""
         if self._base_proc is not None and self._base_proc.poll() is None:
             return
-        if os.path.exists(ACTIVE_ONNX):
-            if not messagebox.askyesno(
-                    "기본 모델 가져오기",
-                    "기본 YOLO 모델(yolov5su · COCO 80종)을 적용합니다.\n"
-                    "현재 적용된 모델(active.onnx)을 덮어씁니다. 계속할까요?"):
+        import glob
+        items = [("__yolo__", "⭐ 기본 YOLO 모델 (yolov5su · COCO 80종)")]
+        cur = os.path.abspath(ACTIVE_ONNX)
+        for p in sorted(glob.glob(os.path.join(MODELS_DIR, "*.onnx"))):
+            tag = "  (현재 적용됨)" if os.path.abspath(p) == cur else ""
+            items.append((p, "🧠 " + os.path.basename(p) + tag))
+        for p in sorted(glob.glob(os.path.join(MODELS_DIR, "*.pt"))):
+            items.append((p, "🏋 " + os.path.basename(p) + "  (학습 가중치 → 변환)"))
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("모델 가져오기")
+        dlg.configure(bg="white")
+        dlg.transient(self.root)
+        dlg.resizable(False, False)
+        tk.Label(dlg, text="적용할 모델을 선택하세요",
+                 font=("Malgun Gothic", 12, "bold"), bg="white").pack(
+            padx=18, pady=(16, 2))
+        tk.Label(dlg, text="기본 YOLO, 또는 학습/내보낸 .onnx · .pt 모델",
+                 font=("Malgun Gothic", 9), fg="#777", bg="white").pack()
+        lb = tk.Listbox(dlg, width=48, height=min(13, max(4, len(items))),
+                        font=("Malgun Gothic", 10), activestyle="none")
+        for _key, label in items:
+            lb.insert("end", label)
+        lb.select_set(0)
+        lb.pack(padx=18, pady=8)
+
+        def apply_sel():
+            sel = lb.curselection()
+            if not sel:
+                dlg.destroy()
                 return
+            key = items[sel[0]][0]
+            dlg.destroy()
+            if key == "__yolo__":
+                self._run_model_subprocess(
+                    ["base"], "⏳ 기본 YOLO 모델 가져오는 중... "
+                    "(처음엔 가중치 다운로드로 시간이 걸립니다)")
+            elif key.lower().endswith(".pt"):
+                self._run_model_subprocess(
+                    [key], f"⏳ 학습 가중치 변환 중... "
+                    f"({os.path.basename(key)} → ONNX)")
+            else:
+                self._apply_onnx_model(key)
+
+        def browse():
+            dlg.destroy()
+            path = filedialog.askopenfilename(
+                title="모델 파일 선택 (.onnx / .pt)", initialdir=MODELS_DIR,
+                filetypes=[("모델 파일", "*.onnx *.pt"), ("ONNX", "*.onnx"),
+                           ("PyTorch 가중치", "*.pt"), ("모든 파일", "*.*")])
+            if not path:
+                return
+            if path.lower().endswith(".pt"):
+                self._run_model_subprocess(
+                    [path], f"⏳ 학습 가중치 변환 중... "
+                    f"({os.path.basename(path)} → ONNX)")
+            else:
+                self._apply_onnx_model(path)
+
+        btns = tk.Frame(dlg, bg="white"); btns.pack(pady=(0, 16))
+        tk.Button(btns, text="적용", bg="#28a745", fg="white", relief="flat",
+                  cursor="hand2", width=10, font=("Malgun Gothic", 10, "bold"),
+                  command=apply_sel).pack(side="left", padx=6)
+        tk.Button(btns, text="📂 파일에서…", cursor="hand2", width=12,
+                  command=browse).pack(side="left", padx=6)
+        tk.Button(btns, text="취소", cursor="hand2", width=8,
+                  command=dlg.destroy).pack(side="left", padx=6)
+        lb.bind("<Double-Button-1>", lambda e: apply_sel())
+        dlg.update_idletasks()
+        try:
+            x = self.root.winfo_rootx() + 150
+            y = self.root.winfo_rooty() + 130
+            dlg.geometry(f"+{x}+{y}")
+            dlg.grab_set()
+        except Exception:
+            pass
+
+    def _apply_onnx_model(self, path):
+        """이미 만들어진 .onnx 를 active 로 적용(파일 복사, 변환 불필요 → 즉시)."""
+        try:
+            self.rec_view.stop()
+        except Exception:
+            pass
+        try:
+            import export_onnx
+            names = export_onnx.apply_onnx_as_active(
+                path, label=os.path.basename(path))
+            self.model_status.config(
+                text=f"✓ ONNX 모델 적용: {os.path.basename(path)} "
+                     f"(클래스 {len(names)}개) — 다시 로드합니다...", fg="#2e7d32")
+            self._reload_model()
+        except Exception as e:
+            self.model_status.config(text=f"✗ ONNX 적용 실패: {e}", fg="#c62828")
+
+    def _run_model_subprocess(self, args, status_text):
+        """export_onnx.py 를 서브프로세스로 실행(YOLO 기본/.pt 변환). 진행바+재로드."""
+        if self._base_proc is not None and self._base_proc.poll() is None:
+            return
         try:
             self.rec_view.stop()        # 모델 파일 교체 동안 인식 정지
         except Exception:
             pass
-        self.model_status.config(
-            text="⏳ 기본 YOLO 모델 가져오는 중... (처음엔 가중치 다운로드로 시간이 걸립니다)",
-            fg="#ef6c00")
+        self.model_status.config(text=status_text, fg="#ef6c00")
         if not self.model_pb.winfo_ismapped():
             self.model_pb.pack(before=self._coco_header, pady=6)
         self.model_pb.start(12)
         self._base_proc = subprocess.Popen(
-            [PY, os.path.join(ROBOT_DIR, "export_onnx.py"), "base"],
+            [PY, os.path.join(ROBOT_DIR, "export_onnx.py")] + list(args),
             cwd=BASE, env=self._child_env())
-        self._watch_base_proc()
+        self._watch_model_proc()
 
-    def _watch_base_proc(self):
+    def _watch_model_proc(self):
         if self._base_proc is not None and self._base_proc.poll() is None:
-            self.root.after(600, self._watch_base_proc)
+            self.root.after(600, self._watch_model_proc)
             return
         self.model_pb.stop()
         rc = self._base_proc.returncode if self._base_proc else 1
         self._base_proc = None
         if rc == 0:
             self.model_status.config(
-                text="✓ 기본 YOLO 모델 적용 완료 — 다시 로드합니다...", fg="#2e7d32")
+                text="✓ 모델 적용 완료 — 다시 로드합니다...", fg="#2e7d32")
             self._reload_model()        # active 다시 읽고 클래스 목록 갱신
         else:
-            self.model_pb.stop(); self.model_pb.pack_forget()
+            self.model_pb.pack_forget()
             self.model_status.config(
-                text=f"✗ 기본 모델 가져오기 실패(코드 {rc}) — 콘솔 로그 확인",
+                text=f"✗ 모델 가져오기 실패(코드 {rc}) — 콘솔 로그 확인",
                 fg="#c62828")
 
     def _style(self):
@@ -698,10 +788,10 @@ class App:
                   command=self._save_train_url).pack(side="left", ipadx=4)
 
         btns = tk.Frame(f, bg=BG); btns.pack(pady=18)
-        tk.Button(btns, text="⬇ 기본 모델(YOLO) 가져오기",
+        tk.Button(btns, text="📥 모델 가져오기",
                   font=("Malgun Gothic", 11, "bold"), bg="#00897b", fg="white",
-                  relief="flat", cursor="hand2", height=2, width=22,
-                  command=self._import_base_model).pack(side="left", padx=6)
+                  relief="flat", cursor="hand2", height=2, width=16,
+                  command=self._import_model).pack(side="left", padx=6)
         tk.Button(btns, text="🌐 학습 웹앱 열기",
                   font=("Malgun Gothic", 11, "bold"), bg="#6a1b9a", fg="white",
                   relief="flat", cursor="hand2", height=2, width=20,

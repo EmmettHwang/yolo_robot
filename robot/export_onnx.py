@@ -13,7 +13,7 @@ export_onnx.py
 import os
 import shutil
 
-from paths import (MODELS_DIR, ACTIVE_ONNX, BASE_ONNX,
+from paths import (MODELS_DIR, ACTIVE_ONNX, ACTIVE_CLASSES, BASE_ONNX,
                    set_active_classes, set_active_name)
 
 EXPORT_IMGSZ = 320      # 런타임 추론(INFER_SIZE)과 동일해야 함
@@ -43,6 +43,31 @@ def apply_pt_as_active(pt_path: str, label: str = None,
     set_active_classes(names)
     set_active_name(label or os.path.basename(pt_path))
     return names
+
+
+def apply_onnx_as_active(onnx_path: str, names_path: str = None,
+                         label: str = None) -> list:
+    """이미 만들어진 .onnx 를 active.onnx 로 적용(ultralytics 불필요, 파일 복사).
+
+    클래스명(.names)은 같은 이름의 사이드카(<stem>.names)를 자동으로 찾아 적용.
+    없으면 현재 active.names 를 유지한다. 적용된 클래스 목록을 반환.
+    """
+    if onnx_path and os.path.abspath(onnx_path) != os.path.abspath(ACTIVE_ONNX):
+        os.makedirs(MODELS_DIR, exist_ok=True)
+        shutil.copy(onnx_path, ACTIVE_ONNX)
+    if names_path is None:
+        cand = os.path.splitext(onnx_path)[0] + ".names"
+        if os.path.exists(cand):
+            names_path = cand
+    if (names_path and os.path.exists(names_path)
+            and os.path.abspath(names_path) != os.path.abspath(ACTIVE_CLASSES)):
+        shutil.copy(names_path, ACTIVE_CLASSES)
+    set_active_name(label or os.path.basename(onnx_path))
+    try:
+        with open(ACTIVE_CLASSES, encoding="utf-8") as f:
+            return [ln.strip() for ln in f if ln.strip()]
+    except Exception:
+        return []
 
 
 def make_base_active() -> list:
