@@ -61,15 +61,70 @@ def _read_cfg():
         return None, "0"
 
 
+def _bt_name(mac12):
+    """페어링된 블루투스 기기의 친숙한 이름(레지스트리)."""
+    try:
+        import winreg
+        path = (r"SYSTEM\CurrentControlSet\Services\BTHPORT"
+                r"\Parameters\Devices\%s" % mac12.lower())
+        k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path)
+        val, _ = winreg.QueryValueEx(k, "Name")
+        winreg.CloseKey(k)
+        if isinstance(val, (bytes, bytearray)):
+            return (val.split(b"\x00")[0].decode("utf-8", "ignore").strip()
+                    or None)
+        return str(val).strip() or None
+    except Exception:
+        return None
+
+
+def _port_detail(port):
+    """저장된 포트 → 'COM16 - 설명  ★ 이름 (MAC xx:xx)' 문자열. (found, text)."""
+    import re
+    try:
+        ports = list(list_ports.comports())
+    except Exception:
+        ports = []
+    for p in ports:
+        if p.device != port:
+            continue
+        text = f"{p.device} - {p.description}"
+        m = re.search(r"&0&([0-9A-Fa-f]{12})_", p.hwid or "")
+        if m:
+            addr = m.group(1).upper()
+            if addr != "000000000000":
+                short = f"{addr[-4:-2]}:{addr[-2:]}"
+                name = _bt_name(addr) or "Bluetooth 기기"
+                text += f"   ★ {name} (MAC {short})"
+        return True, text
+    return False, port
+
+
+def _camera_name(index):
+    """카메라 인덱스 → DirectShow 장치 이름(pygrabber). 실패 시 None."""
+    try:
+        from pygrabber.dshow_graph import FilterGraph
+        names = FilterGraph().get_input_devices()
+        i = int(index)
+        if 0 <= i < len(names):
+            return names[i]
+    except Exception:
+        pass
+    return None
+
+
 def _validate_devices():
-    """(ok, message). 저장된 포트가 실제 연결 목록에 있는지 확인."""
+    """(ok, message). 저장된 포트/카메라를 이름과 함께 구체적으로 표시."""
     port, cam = _read_cfg()
     if not port:
         return False, "포트가 설정되지 않았습니다. ‘장치 설정 열기’에서 선택하세요."
     avail = [p.device for p in list_ports.comports()]
     if port not in avail:
         return False, f"{port} 가 연결 목록에 없습니다. 로봇 전원/페어링 확인 후 다시 설정."
-    return True, f"✓ 포트 {port} · 카메라 {cam} 확인됨"
+    _found, ptext = _port_detail(port)
+    cname = _camera_name(cam)
+    camtext = f"카메라{cam}" + (f" - {cname}" if cname else "")
+    return True, f"✓ 포트  {ptext}\n✓ {camtext}  · 확인됨"
 
 
 class App:
