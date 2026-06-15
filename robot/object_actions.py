@@ -322,8 +322,9 @@ class ActionEditor(ttk.Frame):
 
         # 컬럼 헤더
         ch = tk.Frame(card, bg="#fbfcff"); ch.pack(fill="x", padx=8)
-        for txt, w in (("모션", 24), ("사운드", 9),
-                       ("값 (mp3 / 읽을 말)", 32), ("지속", 8)):
+        for txt, w in (("모션", 22), ("사운드", 9),
+                       ("값 (mp3 / 읽을 말)", 24), ("지속", 6),
+                       ("🔁반복", 6), ("❓조건", 13)):
             tk.Label(ch, text=txt, width=w, anchor="w", bg="#fbfcff",
                      font=("Malgun Gothic", 8, "bold"), fg="#888").pack(
                 side="left")
@@ -368,7 +369,7 @@ class ActionEditor(ttk.Frame):
         m = data.get("motion")
         mv.set(motion_label(int(m)) if m else NONE_MOTION)
         step["motion_var"] = mv
-        mc = ttk.Combobox(fr, textvariable=mv, state="readonly", width=24,
+        mc = ttk.Combobox(fr, textvariable=mv, state="readonly", width=22,
                           values=self._motion_values)
         mc.pack(side="left")
         mc.bind("<<ComboboxSelected>>", lambda e: self._autosave())
@@ -478,7 +479,7 @@ class ActionEditor(ttk.Frame):
                                     if os.path.basename(p) == bn), None)
                     disp.set(matched or bn)
             cb = ttk.Combobox(step["val_holder"], textvariable=disp,
-                              state="readonly", width=32,
+                              state="readonly", width=24,
                               values=labels or ["(assets/mp3 비어있음)"])
 
             def on_sel(e, s=step, ps=paths, ls=labels, d=disp):
@@ -489,17 +490,17 @@ class ActionEditor(ttk.Frame):
             cb.pack(side="left")
         elif kind == snd.TTS:
             ent = tk.Entry(step["val_holder"], textvariable=step["val_var"],
-                           width=32)
+                           width=24)
             ent.pack(side="left")
             ent.bind("<FocusOut>", lambda e: self._autosave())
         elif kind == snd.RANDOM:
             step["val_var"].set("")
             tk.Label(step["val_holder"], text="🎲 랜덤 로봇음 (다양한 소리)",
-                     width=32, anchor="w", fg="#6a1b9a",
+                     width=24, anchor="w", fg="#6a1b9a",
                      bg="#fbfcff").pack(side="left")
         else:
             step["val_var"].set("")
-            tk.Label(step["val_holder"], text="(사운드 없음)", width=32,
+            tk.Label(step["val_holder"], text="(사운드 없음)", width=24,
                      anchor="w", fg="#999", bg="#fbfcff").pack(side="left")
 
     # ---------- 저장 ----------
