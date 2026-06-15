@@ -397,8 +397,8 @@ def build():
                     gr.Markdown("📸 사진찍기=1장 · 🔴 연속찍기=약 0.5초마다 자동 저장 · "
                                 "■ 중지. 각도·거리를 바꿔 20~50장 모으면 좋아요.")
                 with gr.Column():
-                    gr.Markdown("**기존 이름을 고르면 그 사진에 이어서 추가됩니다.**")
-                    cls_dd = gr.Dropdown(_class_choices(), label="모은 것 보기",
+                    gr.Markdown("**클래스를 선택하면 그 사진에 이어서 추가됩니다.**")
+                    cls_dd = gr.Dropdown(_class_choices(), label="클래스",
                                          interactive=True)
                     gallery = gr.Gallery(label="모은 사진 (최신순 미리보기)",
                                          columns=4, height=320)
