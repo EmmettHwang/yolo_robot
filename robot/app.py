@@ -109,6 +109,7 @@ class App:
         self._train_proc = None
         self._train_before_mtime = 0
         self._web_proc = None
+        self._base_proc = None        # 기본 모델 가져오기 서브프로세스
         # 자동 진행 옵션 (체크박스)
         self.auto_dev = tk.BooleanVar(value=True)    # 설정 후 자동 이동
         self.auto_yolo = tk.BooleanVar(value=False)  # 모델 준비 후 자동 이동
@@ -438,6 +439,49 @@ class App:
         self._hide_wait_dialog()
         self._apply_topmost()
 
+    # ---------- 기본 모델(YOLO) 가져오기 ----------
+    def _import_base_model(self):
+        """기본 YOLO(yolov5su, COCO 80종)를 ONNX 로 받아 active 로 적용(서브프로세스)."""
+        if self._base_proc is not None and self._base_proc.poll() is None:
+            return
+        if os.path.exists(ACTIVE_ONNX):
+            if not messagebox.askyesno(
+                    "기본 모델 가져오기",
+                    "기본 YOLO 모델(yolov5su · COCO 80종)을 적용합니다.\n"
+                    "현재 적용된 모델(active.onnx)을 덮어씁니다. 계속할까요?"):
+                return
+        try:
+            self.rec_view.stop()        # 모델 파일 교체 동안 인식 정지
+        except Exception:
+            pass
+        self.model_status.config(
+            text="⏳ 기본 YOLO 모델 가져오는 중... (처음엔 가중치 다운로드로 시간이 걸립니다)",
+            fg="#ef6c00")
+        if not self.model_pb.winfo_ismapped():
+            self.model_pb.pack(before=self._coco_header, pady=6)
+        self.model_pb.start(12)
+        self._base_proc = subprocess.Popen(
+            [PY, os.path.join(ROBOT_DIR, "export_onnx.py"), "base"],
+            cwd=BASE, env=self._child_env())
+        self._watch_base_proc()
+
+    def _watch_base_proc(self):
+        if self._base_proc is not None and self._base_proc.poll() is None:
+            self.root.after(600, self._watch_base_proc)
+            return
+        self.model_pb.stop()
+        rc = self._base_proc.returncode if self._base_proc else 1
+        self._base_proc = None
+        if rc == 0:
+            self.model_status.config(
+                text="✓ 기본 YOLO 모델 적용 완료 — 다시 로드합니다...", fg="#2e7d32")
+            self._reload_model()        # active 다시 읽고 클래스 목록 갱신
+        else:
+            self.model_pb.stop(); self.model_pb.pack_forget()
+            self.model_status.config(
+                text=f"✗ 기본 모델 가져오기 실패(코드 {rc}) — 콘솔 로그 확인",
+                fg="#c62828")
+
     def _style(self):
         st = ttk.Style()
         try:
@@ -599,9 +643,13 @@ class App:
                   command=self._save_train_url).pack(side="left", ipadx=4)
 
         btns = tk.Frame(f, bg=BG); btns.pack(pady=18)
+        tk.Button(btns, text="⬇ 기본 모델(YOLO) 가져오기",
+                  font=("Malgun Gothic", 11, "bold"), bg="#00897b", fg="white",
+                  relief="flat", cursor="hand2", height=2, width=22,
+                  command=self._import_base_model).pack(side="left", padx=6)
         tk.Button(btns, text="🌐 학습 웹앱 열기",
                   font=("Malgun Gothic", 11, "bold"), bg="#6a1b9a", fg="white",
-                  relief="flat", cursor="hand2", height=2, width=24,
+                  relief="flat", cursor="hand2", height=2, width=20,
                   command=self._open_train_web).pack(side="left", padx=6)
         self.train_next = tk.Button(
             btns, text="다음 → 자율활동시작 ▶", font=("Malgun Gothic", 11, "bold"),

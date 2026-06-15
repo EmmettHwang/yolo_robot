@@ -103,12 +103,13 @@ def _counts_md():
 # ============================================================
 # ② 학습
 # ============================================================
-def train(epochs, imgsz, patience):
+def train(epochs, imgsz, patience, progress=gr.Progress()):
     classes = load_classes()
     total = sum(count_images(c) for c in classes)
     if total < 1 or not classes:
         yield "먼저 ① 데이터 수집에서 데이터를 모으세요.", None, ""
         return
+    progress(0.0, desc="학습 준비 중...")
     base = BASE_WEIGHTS if os.path.exists(BASE_WEIGHTS) else "yolov5su.pt"
     build_data_yaml()
     # patience: 성능 개선이 N에폭 동안 없으면 조기 종료(best는 항상 저장됨)
@@ -140,12 +141,20 @@ def train(epochs, imgsz, patience):
         line = raw.replace("\r", "\n").rstrip("\n").split("\n")[-1]
         if line:
             lines.append(line)
-            yield _tail(), None, _live_md(read_results_metrics())  # 실시간 지표
+            m = read_results_metrics()
+            try:
+                done = int(m.get("epochs") or 0) if m else 0
+                progress(min(0.98, done / max(1, int(epochs))),
+                         desc=f"학습 중... {done}/{int(epochs)}에폭")
+            except Exception:
+                pass
+            yield _tail(), None, _live_md(m)             # 실시간 지표
     proc.wait()
     if proc.returncode != 0:
         lines.append(f"✗ 학습 실패(코드 {proc.returncode})")
         yield _tail(), None, ""
         return
+    progress(1.0, desc="학습 완료!")
     m = read_results_metrics()
     graph = (PR_CURVE if os.path.exists(PR_CURVE)
              else (RESULTS_PNG if os.path.exists(RESULTS_PNG) else None))
@@ -187,19 +196,24 @@ def _metrics_md(m):
 # ============================================================
 # ③ 적용 / 내보내기
 # ============================================================
-def export_apply(name):
+def export_apply(name, progress=gr.Progress()):
     hide = gr.update(visible=False)
+    progress(0.05, desc="확인 중...")
     if not os.path.exists(BEST_WEIGHTS):
-        return "② 학습을 먼저 끝내세요(best.pt 없음).", hide, hide, hide, hide
+        return ("② 학습을 먼저 끝내세요(best.pt 없음).",
+                hide, hide, hide, hide)
     name = (name or "custom").strip()
     if not name.endswith(".pt"):
         name += ".pt"
     os.makedirs(MODELS_DIR, exist_ok=True)
     dst = os.path.join(MODELS_DIR, name)
     try:
+        progress(0.2, desc="① 학습 가중치 복사 중...")
         shutil.copy(BEST_WEIGHTS, dst)              # 학습 가중치 보관(best.pt 사본)
+        progress(0.45, desc="② ONNX 변환 중... (수십 초 걸릴 수 있어요)")
         names = export_onnx.apply_pt_as_active(dst, label=name)   # → active.onnx
         # 3개 파일을 zip 하나로 묶기(일괄 다운로드용)
+        progress(0.8, desc="③ 파일 묶는 중 (ZIP)...")
         bundle = os.path.join(MODELS_DIR, "robocommander_model.zip")
         with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as z:
             if os.path.exists(ACTIVE_ONNX):
@@ -208,12 +222,14 @@ def export_apply(name):
                 z.write(ACTIVE_CLASSES, "active.names")
             if os.path.exists(dst):
                 z.write(dst, os.path.basename(dst))
+        progress(1.0, desc="완료!")
     except Exception as e:
         return f"✗ 변환 실패: {e}", hide, hide, hide, hide
     msg = (
-        f"✓ 모델 완성 — **{name}**, 클래스 {len(names)}개\n\n"
-        "**📂 저장 위치**: 내려받은 `active.onnx` + `active.names` 를 "
-        "**로봇(인식) PC 의 `gradio/model/` 폴더**에 넣고, 인식 앱에서 "
+        f"### ✅ 모델 완성 — {name} · 클래스 {len(names)}개\n"
+        "아래 **⬇ 모델 전체 한 번에 받기(ZIP)** 버튼으로 내려받으세요.\n\n"
+        "**📂 적용 방법**: 내려받은 `active.onnx` + `active.names` 를 "
+        "**로봇(인식) PC 의 `model/` 폴더**에 넣고, 인식 앱에서 "
         "**■ 정지 → ▶ 연결 & 시작** 하면 새 모델이 적용됩니다. "
         "(`.pt` 는 재학습용 보관 파일)"
     )
@@ -282,9 +298,14 @@ def build():
             result_graph = gr.Image(label="정밀도-재현율(PR) 곡선", height=460)
 
         with gr.Tab("③ 내보내기", interactive=_have_model()) as tab3:
-            gr.Markdown("학습한 모델을 **내려받아 로봇 PC에 넣으면** 인식에 사용됩니다.")
+            gr.Markdown(
+                "**1) 📦 모델 만들기** 를 누르면 학습 결과(best.pt)를 인식용 "
+                "**ONNX(active.onnx)** 로 변환합니다(진행바 표시).\n"
+                "**2)** 변환이 끝나면 **⬇ 다운로드** 버튼이 나타납니다. "
+                "내려받아 로봇(인식) PC 의 `model/` 폴더에 넣으세요.")
             name_in = gr.Textbox(value="내모델", label="모델 이름")
-            exp_btn = gr.Button("📦 모델 만들기", variant="primary", size="lg")
+            exp_btn = gr.Button("📦 모델 만들기 (ONNX 변환)", variant="primary",
+                                size="lg")
             exp_status = gr.Markdown("")
             dl_all = gr.DownloadButton("⬇  모델 전체 한 번에 받기 (ZIP)",
                                        variant="primary", size="lg",

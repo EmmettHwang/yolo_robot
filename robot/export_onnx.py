@@ -45,24 +45,38 @@ def apply_pt_as_active(pt_path: str, label: str = None,
     return names
 
 
-def ensure_default_onnx() -> None:
-    """active.onnx 가 없으면 기본 모델(yolov5su)을 받아 ONNX 로 만들어 적용."""
-    if os.path.exists(ACTIVE_ONNX):
-        return
+def make_base_active() -> list:
+    """기본 모델(yolov5su, COCO 80클래스)을 받아 ONNX 로 만들어 active 에 적용.
+
+    이미 active.onnx 가 있어도 **무조건 기본 모델로 교체**한다. names 반환.
+    """
     from ultralytics import YOLO
     os.makedirs(MODELS_DIR, exist_ok=True)
     model = YOLO("yolov5su.pt")
     onnx_path = str(model.export(format="onnx", imgsz=EXPORT_IMGSZ, opset=12))
     shutil.copy(onnx_path, BASE_ONNX)
     shutil.copy(onnx_path, ACTIVE_ONNX)
-    set_active_classes(_names_list(model))
-    set_active_name("yolov5su.onnx")
+    names = _names_list(model)
+    set_active_classes(names)
+    set_active_name("yolov5su (기본 모델)")
+    return names
+
+
+def ensure_default_onnx() -> None:
+    """active.onnx 가 없으면 기본 모델(yolov5su)을 받아 ONNX 로 만들어 적용."""
+    if os.path.exists(ACTIVE_ONNX):
+        return
+    make_base_active()
 
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) > 1:
-        names = apply_pt_as_active(sys.argv[1])
+    arg = sys.argv[1] if len(sys.argv) > 1 else ""
+    if arg == "base":
+        names = make_base_active()
+        print(f"[export] 기본 모델(yolov5su) 적용 완료, 클래스 {len(names)}개")
+    elif arg:
+        names = apply_pt_as_active(arg)
         print(f"[export] active.onnx 적용 완료, 클래스 {len(names)}개")
     else:
         ensure_default_onnx()
