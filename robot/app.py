@@ -24,7 +24,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, simpledialog, messagebox
 
 import serial.tools.list_ports as list_ports
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw
 
 from paths import (BASE, ROBOT_DIR, CONFIG_INI, LOGO_PATH, ACTIVE_ONNX,
                    DATA_DIR, ensure_dirs)
@@ -125,7 +125,7 @@ class App:
         self.tab_act = self._tab_actions(self.nb)
         self.nb.add(self.tab_dev, text="  ①  ⚙ 로봇장치설정  ")
         self.nb.add(self.tab_train, text="  ②  🧠 인공지능학습  ")
-        self.nb.add(self.tab_act, text="  ③  🎯 인식및반응설정  ")
+        self.nb.add(self.tab_act, text="  ③  🧩 프로그래밍  ")
         self.nb.add(self.rec_view, text="  ④  ▶ 자율활동시작  ")
         self.nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
@@ -182,6 +182,10 @@ class App:
         self._cur_project = name
         base = f"YOLO 기반 휴머노이드  ROBO COMMANDER  v{__version__}"
         self.root.title(base + (f"   —   [{name}]" if name else ""))
+        try:
+            self.proj_label.config(text=name if name else "(저장 안 됨)")
+        except Exception:
+            pass
 
     def _project_new(self):
         if not messagebox.askyesno(
@@ -218,23 +222,79 @@ class App:
         except Exception as e:
             messagebox.showerror("프로젝트 저장 실패", str(e))
 
-    def _project_open(self):
-        folder = filedialog.askdirectory(
-            title="프로젝트 폴더 선택 (actions.json 이 든 폴더)",
-            initialdir=project.projects_root())
-        if not folder:
-            return
+    def _do_load(self, folder, name):
         try:
             mapping = project.load_project(folder)
             project.apply_mapping(mapping)
-            self._set_project(os.path.basename(folder.rstrip("/\\")))
+            self._set_project(name)
             self._refresh_all_action_tabs()
             self.nb.select(self.tab_act)
             messagebox.showinfo(
                 "프로젝트 불러오기",
-                f"‘{self._cur_project}’ 불러오기 완료 ({len(mapping)}개 객체)")
+                f"‘{name}’ 불러오기 완료 ({len(mapping)}개 객체)")
         except Exception as e:
             messagebox.showerror("불러오기 실패", str(e))
+
+    def _project_open(self):
+        names = project.list_projects()
+        if not names:
+            if messagebox.askyesno(
+                    "불러오기", "저장된 프로젝트가 없습니다.\n"
+                    "다른 폴더에서 직접 열어볼까요?"):
+                self._project_open_folder_dialog()
+            return
+        self._pick_project_dialog(names)
+
+    def _project_open_folder_dialog(self):
+        folder = filedialog.askdirectory(
+            title="프로젝트 폴더 선택 (actions.json 이 든 폴더)",
+            initialdir=project.projects_root())
+        if folder:
+            self._do_load(folder, os.path.basename(folder.rstrip("/\\")))
+
+    def _pick_project_dialog(self, names):
+        dlg = tk.Toplevel(self.root)
+        dlg.title("프로젝트 불러오기")
+        dlg.configure(bg="white")
+        dlg.transient(self.root)
+        dlg.resizable(False, False)
+        tk.Label(dlg, text="불러올 프로젝트를 선택하세요",
+                 font=("Malgun Gothic", 11, "bold"), bg="white").pack(
+            padx=18, pady=(16, 8))
+        lb = tk.Listbox(dlg, width=38, height=min(12, max(3, len(names))),
+                        font=("Malgun Gothic", 11), activestyle="none")
+        for n in names:
+            lb.insert("end", n)
+        lb.select_set(0)
+        lb.pack(padx=18)
+
+        def ok():
+            sel = lb.curselection()
+            if sel:
+                name = names[sel[0]]
+                dlg.destroy()
+                self._do_load(project.project_dir(name), name)
+            else:
+                dlg.destroy()
+        lb.bind("<Double-Button-1>", lambda e: ok())
+        btns = tk.Frame(dlg, bg="white"); btns.pack(pady=14)
+        tk.Button(btns, text="열기", bg="#28a745", fg="white", relief="flat",
+                  cursor="hand2", width=8, font=("Malgun Gothic", 10, "bold"),
+                  command=ok).pack(side="left", padx=6)
+        tk.Button(btns, text="다른 폴더…", cursor="hand2", width=10,
+                  command=lambda: (dlg.destroy(),
+                                   self._project_open_folder_dialog())).pack(
+            side="left", padx=6)
+        tk.Button(btns, text="취소", cursor="hand2", width=8,
+                  command=dlg.destroy).pack(side="left", padx=6)
+        dlg.update_idletasks()
+        try:
+            x = self.root.winfo_rootx() + 140
+            y = self.root.winfo_rooty() + 140
+            dlg.geometry(f"+{x}+{y}")
+            dlg.grab_set()
+        except Exception:
+            pass
 
     def _project_open_folder(self):
         try:
@@ -384,12 +444,50 @@ class App:
             st.theme_use("clam")
         except Exception:
             pass
-        st.configure("TNotebook", background=BG, borderwidth=0)
-        st.configure("TNotebook.Tab", font=("Malgun Gothic", 12, "bold"),
-                     padding=(18, 10), background="#dfe5f0")
-        st.map("TNotebook.Tab", background=[("selected", ACCENT)],
-               foreground=[("selected", "white")])
+        st.configure("TNotebook", background=BG, borderwidth=0,
+                     tabmargins=(6, 6, 6, 0))
+        # 평소엔 작게(연한 회색), 마우스 올리면(active) 살짝 진하게,
+        # 선택하면 크게(굵은 글씨 + accent 배경 + 흰 글씨)
+        st.configure("TNotebook.Tab", font=("Malgun Gothic", 10),
+                     padding=(13, 6), background="#e6ebf5", foreground="#566",
+                     borderwidth=0)
+        st.map(
+            "TNotebook.Tab",
+            background=[("selected", ACCENT), ("active", "#d2ddf2")],
+            foreground=[("selected", "white"), ("active", "#1a2b50")],
+            font=[("selected", ("Malgun Gothic", 13, "bold"))],
+            padding=[("selected", (22, 12)), ("active", (15, 8))],
+            expand=[("selected", (1, 1, 1, 0))])
         st.configure("TFrame", background=BG)
+        self._apply_round_tabs(st)
+
+    def _apply_round_tabs(self, st):
+        """ttk 탭을 둥근 모서리 이미지로 교체(호버/선택 상태별 색).
+
+        실패하면 위의 configure/map 스타일(둥글지 않음)로 자동 폴백.
+        """
+        try:
+            def make(color, h, r=16, w=170):
+                img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+                d = ImageDraw.Draw(img)
+                d.rounded_rectangle([2, 2, w - 3, h - 3], radius=r,
+                                    fill=color)
+                return ImageTk.PhotoImage(img)
+            self._tab_imgs = {
+                "normal": make("#e6ebf5", 40),
+                "active": make("#d2ddf2", 42),
+                "selected": make(ACCENT, 50),     # 선택 시 더 크게(높게)
+            }
+            st.element_create(
+                "RoundTab", "image", self._tab_imgs["normal"],
+                ("selected", self._tab_imgs["selected"]),
+                ("active", self._tab_imgs["active"]),
+                border=16, sticky="nsew", height=40, padding=(14, 7))
+            st.layout("TNotebook.Tab", [
+                ("RoundTab", {"sticky": "nsew", "children": [
+                    ("Notebook.label", {"side": "top", "sticky": ""})]})])
+        except Exception:
+            pass        # 폴백: 이미지 없이 configure/map 스타일 유지
 
     def _header(self):
         header = tk.Frame(self.root, bg=HEADER_BG, height=66)
@@ -522,6 +620,30 @@ class App:
     # ---------- 탭: 객체 반응 (표 / 블록 / 파이썬 3-탭) ----------
     def _tab_actions(self, nb):
         f = ttk.Frame(nb)
+
+        # 프로젝트 툴바 (저장/불러오기/새로 만들기 + 현재 프로젝트 표시)
+        topbar = tk.Frame(f, bg="#eef2fb"); topbar.pack(fill="x")
+        tk.Label(topbar, text="📁 프로젝트:", bg="#eef2fb",
+                 font=("Malgun Gothic", 10, "bold")).pack(side="left",
+                                                          padx=(10, 4), pady=6)
+        self.proj_label = tk.Label(topbar, text="(저장 안 됨)", bg="#eef2fb",
+                                   font=("Malgun Gothic", 10, "bold"),
+                                   fg="#1565c0")
+        self.proj_label.pack(side="left")
+        tk.Button(topbar, text="📂 불러오기", bg="#607d8b", fg="white",
+                  relief="flat", cursor="hand2",
+                  font=("Malgun Gothic", 9, "bold"),
+                  command=self._project_open).pack(side="right", padx=(4, 10),
+                                                   pady=4)
+        tk.Button(topbar, text="💾 이름으로 저장", bg="#28a745", fg="white",
+                  relief="flat", cursor="hand2",
+                  font=("Malgun Gothic", 9, "bold"),
+                  command=self._project_save_as).pack(side="right", padx=4,
+                                                      pady=4)
+        tk.Button(topbar, text="🆕 새 프로젝트", relief="flat", cursor="hand2",
+                  font=("Malgun Gothic", 9),
+                  command=self._project_new).pack(side="right", padx=4, pady=4)
+
         sub = ttk.Notebook(f)
         sub.pack(fill="both", expand=True, padx=2, pady=2)
 
