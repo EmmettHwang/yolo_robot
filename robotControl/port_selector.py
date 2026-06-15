@@ -477,8 +477,9 @@ class PortSelector:
         tk.Label(
             bt, bg="#e8f0fe", fg="#c62828", justify="left",
             font=("Malgun Gothic", 9, "bold"),
-            text=("②-2) ⚠ 페어링된 블루투스 동글은 동일 로봇과만 페어링됩니다.\n"
-                  "        (다른 로봇은 그 로봇을 별도로 '장치 추가'(페어링)해야 새 포트가 생깁니다)"),
+            text=("②-2) ⚠ 블루투스 동글은 짝이 되는 로봇하고만 연결됩니다.\n"
+                  "        다른 로봇을 쓰려면 그 로봇의 전용 동글을 사용하세요.\n"
+                  "        (한 동글로 여러 로봇을 페어링하지 않습니다)"),
         ).pack(anchor="w", padx=8, pady=(0, 4))
         btn_bt = tk.Frame(bt, bg="#e8f0fe"); btn_bt.pack(anchor="w", padx=8,
                                                          pady=(0, 6))
