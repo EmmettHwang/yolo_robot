@@ -37,8 +37,8 @@ SpeechRecognition>=3.10  # 음성 인식(Google Web Speech, 키 불필요)
 # + 로컬 LLM은 Ollama 별도 설치 필요: https://ollama.com  (예: ollama pull llama3.2)
 #   STT는 인터넷 필요, TTS는 pyttsx3(위) 사용
 
-# --- (선택) 카메라 실제 이름 표시 (Windows) ---
-# pygrabber
+# --- 카메라 실제 이름 표시 (Windows, DirectShow) ---
+pygrabber>=0.2          # 예: 'Logi C270 HD WebCam' (없으면 'Camera 0' 폴백)
 
 # tkinter, configparser, threading, os, time 은 표준 라이브러리이므로 별도 설치 불필요.
 # (Linux에서 tkinter가 없을 경우: sudo apt install python3-tk)

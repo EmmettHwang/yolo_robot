@@ -365,6 +365,8 @@ class PortSelector:
             s["last_port"] = self.selected_port
         if self.selected_camera_index is not None:
             s["last_camera_index"] = str(self.selected_camera_index)
+        if self.selected_camera_name:
+            s["last_camera_name"] = str(self.selected_camera_name)
         if self.selected_audio_in_index is not None:
             s["last_audio_in_index"] = str(self.selected_audio_in_index)
         if self.selected_audio_out_index is not None:

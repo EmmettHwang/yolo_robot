@@ -61,6 +61,16 @@ def _read_cfg():
         return None, "0"
 
 
+def _read_camera_name():
+    """config 에 저장된 카메라 이름(선택 시 기록). 없으면 None."""
+    cfg = configparser.ConfigParser()
+    try:
+        cfg.read(CONFIG_INI, encoding="utf-8")
+        return cfg["SETTINGS"].get("last_camera_name") or None
+    except Exception:
+        return None
+
+
 def _bt_name(mac12):
     """페어링된 블루투스 기기의 친숙한 이름(레지스트리)."""
     try:
@@ -88,15 +98,15 @@ def _port_detail(port):
     for p in ports:
         if p.device != port:
             continue
-        text = f"{p.device} - {p.description}"
         m = re.search(r"&0&([0-9A-Fa-f]{12})_", p.hwid or "")
-        if m:
+        if m and m.group(1) != "000000000000":
             addr = m.group(1).upper()
-            if addr != "000000000000":
-                short = f"{addr[-4:-2]}:{addr[-2:]}"
-                name = _bt_name(addr) or "Bluetooth 기기"
-                text += f"   ★ {name} (MAC {short})"
-        return True, text
+            short = f"{addr[-4:-2]}:{addr[-2:]}"
+            name = _bt_name(addr) or "Bluetooth 기기"
+            # 블루투스 포트: 'COM16  ★ FB153 v1.0.0 (MAC 1E:76)' (설명 생략)
+            return True, f"{p.device}  ★ {name} (MAC {short})"
+        # 일반 포트: 'COM1 - 통신 포트(COM1)'
+        return True, f"{p.device} - {p.description}"
     return False, port
 
 
@@ -122,7 +132,7 @@ def _validate_devices():
     if port not in avail:
         return False, f"{port} 가 연결 목록에 없습니다. 로봇 전원/페어링 확인 후 다시 설정."
     _found, ptext = _port_detail(port)
-    cname = _camera_name(cam)
+    cname = _read_camera_name() or _camera_name(cam)   # 저장된 이름 우선
     camtext = f"카메라{cam}" + (f" - {cname}" if cname else "")
     return True, f"✓ 포트  {ptext}\n✓ {camtext}  · 확인됨"
 
